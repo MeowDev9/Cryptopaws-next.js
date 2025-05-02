@@ -48,18 +48,76 @@ cd ..
 
 ### 3. Environment Setup
 
+#### MongoDB Setup
+1. Install MongoDB Community Edition:
+   - [Windows](https://www.mongodb.com/docs/manual/tutorial/install-mongodb-on-windows/)
+   - [MacOS](https://www.mongodb.com/docs/manual/tutorial/install-mongodb-on-os-x/)
+   - [Linux](https://www.mongodb.com/docs/manual/administration/install-on-linux/)
+
+2. Start MongoDB service:
+   ```bash
+   # MacOS
+   brew services start mongodb-community
+   
+   # Windows (Run as Administrator)
+   net start MongoDB
+   
+   # Linux
+   sudo systemctl start mongod
+   ```
+
+3. Create a database named `cryptopaws`:
+   ```bash
+   mongosh
+   use cryptopaws
+   ```
+
+4. The default MongoDB connection string will be:
+   ```
+   mongodb://localhost:27017/cryptopaws
+   ```
+
+#### Smart Contract Deployment and Address
+1. Navigate to contracts directory:
+   ```bash
+   cd contracts
+   ```
+
+2. Deploy the contract to your preferred network:
+   ```bash
+   # For local development (Anvil)
+   anvil
+   # In a new terminal
+   forge script script/Deploy.s.sol --rpc-url http://localhost:8545 --private-key 0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80
+   
+   # For testnet (Sepolia)
+   forge script script/Deploy.s.sol --rpc-url https://sepolia.infura.io/v3/YOUR_INFURA_KEY --private-key YOUR_PRIVATE_KEY
+   ```
+
+3. After deployment, you'll receive a contract address. Use this in your frontend .env file.
+
+#### JWT Secret Generation
+Generate a secure JWT secret:
+```bash
+# Using Node.js
+node -e "console.log(require('crypto').randomBytes(64).toString('hex'))"
+
+# Or using OpenSSL
+openssl rand -hex 64
+```
+
 #### Frontend (.env)
 Create a `.env` file in the root directory:
 ```env
 NEXT_PUBLIC_API_URL=http://localhost:5001
-NEXT_PUBLIC_CONTRACT_ADDRESS=your_contract_address
+NEXT_PUBLIC_CONTRACT_ADDRESS=0x... # Your deployed contract address
 ```
 
 #### Backend (.env)
 Create a `.env` file in the Backend directory:
 ```env
-MONGODB_URI=your_mongodb_uri
-JWT_SECRET=your_jwt_secret
+MONGODB_URI=mongodb://localhost:27017/cryptopaws
+JWT_SECRET=your_generated_jwt_secret
 PORT=5001
 ```
 
