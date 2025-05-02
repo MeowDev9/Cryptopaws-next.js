@@ -1,0 +1,75 @@
+const express = require('express');
+const bcrypt = require('bcryptjs');
+const jwt = require('jsonwebtoken');
+const Admin = require('../models/Admin');
+const WelfareOrganization = require('../models/WelfareOrganization');
+const verifyAdmin = require('../middleware/authmiddleware');
+const { approveWelfare, rejectWelfare } = require('../controllers/welfareController'); 
+
+const router = express.Router();
+
+
+router.post('/login', async (req, res) => {
+  try {
+    const { name, email, password } = req.body;
+
+   
+    const admin = await Admin.findOne({ email });
+    if (!admin) {
+      return res.status(400).json({ message: 'Admin not found!' });
+    }
+
+
+    const isMatch = await bcrypt.compare(password, admin.password);
+    if (!isMatch) {
+      return res.status(400).json({ message: 'Invalid credentials!' });
+    }
+
+  
+    const token = jwt.sign(
+      { id: admin._id, role: 'admin' },
+      process.env.JWT_SECRET,
+      { expiresIn: '24h' }
+    );
+
+   
+    res.status(200).json({ message: 'Login successful!', token });
+  } catch (error) {
+    res.status(500).json({ message: 'Server error', error: error.message });
+  }
+});
+
+
+router.get('/organizations/pending', async (req, res) => {
+  try {
+    const pendingOrganizations = await WelfareOrganization.find({ status: 'pending' });
+    res.status(200).json(pendingOrganizations);
+  } catch (error) {
+    res.status(500).json({ message: 'Server error', error: error.message });
+  }
+});
+
+
+// Get all approved welfare organizations
+router.get('/organizations/approved', async (req, res) => {
+  try {
+    const approvedOrganizations = await WelfareOrganization.find({ status: 'approved' });
+    res.status(200).json(approvedOrganizations);
+  } catch (error) {
+    res.status(500).json({ message: 'Server error', error: error.message });
+  }
+});
+
+
+
+router.post('/organizations/:id/approve', verifyAdmin, approveWelfare);
+
+
+router.post('/organizations/:id/reject', verifyAdmin, rejectWelfare);
+
+
+router.get('/dashboard', verifyAdmin, (req, res) => {
+  res.status(200).json({ message: 'Welcome to the Admin Dashboard' });
+});
+
+module.exports = router;
