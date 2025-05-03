@@ -51,7 +51,7 @@ console.log("Connecting to MongoDB...");
 
 
 mongoose
-    .connect(url, {
+.connect(url, {
         useNewUrlParser: true,
         useUnifiedTopology: true,
     })

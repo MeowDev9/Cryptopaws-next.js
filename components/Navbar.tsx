@@ -28,23 +28,22 @@ const Navbar = () => {
     <nav
       className={`fixed top-0 left-0 w-full z-50 transition-all duration-300 ${
         isScrolled
-          ? "bg-white bg-opacity-90 backdrop-blur-md shadow-md py-2"
-          : "bg-white bg-opacity-80 py-4" // Changed from transparent to semi-transparent white
+          ? "bg-opacity-0 shadow-md py-2"
+          : "bg-opacity-0 py-4" // Changed from transparent to semi-transparent white
       }`}
     >
-      <div className="container mx-auto px-4 flex justify-between items-center">
+      <div className="container mx-auto px-8 lg:px-16 flex justify-between items-center">
+
         <Link href="/" className="flex items-center">
-          <Image src="/images/logo.png" alt="CryptoPaws Logo" width={40} height={40} className="mr-2" />
-          <span className={`font-bold text-xl ${isScrolled ? "text-gray-800" : "text-gray-900"}`}>
-            CryptoPaws
-          </span>
+          <Image src="/images/cplogo.png" alt="CryptoPaws Logo" width={150} height={150} className="mr-2" />
+        
         </Link>
 
         {/* Desktop Menu */}
         <div className="hidden md:flex items-center space-x-6">
           <Link
             href="/"
-            className={`font-medium hover:text-purple-500 transition-colors ${
+            className={`font-medium text-white hover:text-purple-500 transition-colors ${
               isScrolled ? "text-gray-800" : "text-gray-900"
             }`}
           >
@@ -52,7 +51,7 @@ const Navbar = () => {
           </Link>
           <Link
             href="/about"
-            className={`font-medium hover:text-purple-500 transition-colors ${
+            className={`font-medium text-white hover:text-purple-500 transition-colors ${
               isScrolled ? "text-gray-800" : "text-gray-900"
             }`}
           >
@@ -60,7 +59,7 @@ const Navbar = () => {
           </Link>
           <Link
             href="/donate"
-            className={`font-medium hover:text-purple-500 transition-colors ${
+            className={`font-medium text-white hover:text-purple-500 transition-colors ${
               isScrolled ? "text-gray-800" : "text-gray-900"
             }`}
           >
@@ -68,7 +67,7 @@ const Navbar = () => {
           </Link>
           <Link
             href="/adopt-animal"
-            className={`font-medium hover:text-purple-500 transition-colors ${
+            className={`font-medium text-white hover:text-purple-500 transition-colors ${
               isScrolled ? "text-gray-800" : "text-gray-900"
             }`}
           >
@@ -76,7 +75,7 @@ const Navbar = () => {
           </Link>
           <Link
             href="/register-welfare"
-            className={`font-medium hover:text-purple-500 transition-colors ${
+            className={`font-medium text-white hover:text-purple-500 transition-colors ${
               isScrolled ? "text-gray-800" : "text-gray-900"
             }`}
           >

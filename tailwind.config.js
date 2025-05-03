@@ -8,6 +8,7 @@ module.exports = {
     theme: {
       extend: {
         colors: {
+          royalPurple: '#800080',
           primary: "var(--primary)",
           "primary-dark": "var(--primary-dark)",
           "primary-light": "var(--primary-light)",

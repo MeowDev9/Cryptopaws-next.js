@@ -19,10 +19,8 @@ export default function About() {
           <div className="absolute inset-0 bg-black bg-opacity-60"></div>
           <div className="absolute inset-0 flex items-center justify-center">
             <div className="text-center text-white px-4">
-              <h1 className="text-4xl md:text-5xl font-bold mb-4">About CryptoPaws</h1>
-              <p className="text-xl max-w-2xl">
-                Transforming animal welfare through blockchain technology and compassion
-              </p>
+              <h1 className="text-4xl md:text-5xl font-bold mb-4">About Us</h1>
+            
             </div>
           </div>
         </div>
@@ -100,24 +98,45 @@ export default function About() {
         <section className="py-16 bg-background">
           <div className="container mx-auto px-4">
             <h2 className="text-3xl font-bold mb-12 text-center text-foreground">Our Team</h2>
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8">
-              {[1, 2, 3, 4].map((member) => (
-                <div key={member} className="text-center">
-                  <div className="relative w-48 h-48 mx-auto rounded-full overflow-hidden mb-4">
-                    <Image
-                      src="/images/placeholder-user.jpg"
-                      alt={`Team Member ${member}`}
-                      fill
-                      style={{ objectFit: "cover" }}
-                    />
-                  </div>
-                  <h3 className="text-xl font-semibold text-foreground">Team Member {member}</h3>
-                  <p className="text-primary">Position</p>
-                  <p className="text-muted-foreground mt-2">
-                    Passionate about animal welfare and dedicated to making a difference.
-                  </p>
-                </div>
-              ))}
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
+            {[
+  {
+    name: "Sana Rizwan",
+    position: "Team Lead",
+    image: "/images/sana.png", // Replace with actual image path
+    description:
+      "A visionary leader with a passion for innovation and a deep commitment to improving animal welfare through technology.",
+  },
+  {
+    name: "Hatim Bilal",
+    position: "Developer",
+    image: "/images/hatim.jpg", // Replace with actual image path
+    description:
+      "Focused on building scalable and secure solutions to bring transparency and trust to the donation process.",
+  },
+  {
+    name: "Taha Kayani",
+    position: "Developer",
+    image: "/images/taha.jpg", // Replace with actual image path
+    description:
+      "Dedicated to crafting clean, user-friendly experiences that help donors and organizations connect meaningfully.",
+  },
+].map((member, index) => (
+  <div key={index} className="flex flex-col items-center text-center">
+  <div className="relative w-48 h-48 rounded-full overflow-hidden mb-4">
+    <Image
+      src={member.image}
+      alt={member.name}
+      fill
+      style={{ objectFit: "cover" }}
+    />
+  </div>
+  <h3 className="text-xl font-semibold text-foreground">{member.name}</h3>
+  <p className="text-primary">{member.position}</p>
+  <p className="text-muted-foreground mt-2 max-w-xs">{member.description}</p>
+</div>
+))}
+
             </div>
           </div>
         </section>
