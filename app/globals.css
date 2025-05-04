@@ -36,4 +36,38 @@ body {
     "Helvetica Neue", sans-serif;
   color: var(--foreground);
   background-color: var(--background);
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+}
+
+main {
+  flex: 1;
+  position: relative;
+  z-index: 1;
+}
+
+@keyframes pulse-slow {
+  0%,
+  100% {
+    opacity: 0.7;
+  }
+  50% {
+    opacity: 0.5;
+  }
+}
+
+.animate-pulse-slow {
+  animation: pulse-slow 3s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+/* Ensure footer is always on top */
+footer {
+  position: relative;
+  z-index: 9999 !important;
+}
+
+/* Fix stacking context issues */
+.particles-container {
+  z-index: 0 !important;
 }

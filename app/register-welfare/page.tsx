@@ -115,7 +115,7 @@ export default function RegisterWelfare() {
         <div className="absolute top-20 left-10 w-64 h-64 bg-purple-600/10 rounded-full blur-3xl"></div>
         <div className="absolute bottom-20 right-10 w-64 h-64 bg-pink-600/10 rounded-full blur-3xl"></div>
 
-        <div className="max-w-6xl mx-auto px-4 relative z-10">
+        <div className="max-w-6xl mx-auto px-4 my-12 relative z-10">
           <div className="flex flex-col lg:flex-row gap-8 items-center">
             {/* Left side - Information */}
             <div className="w-full lg:w-1/2 text-white">
