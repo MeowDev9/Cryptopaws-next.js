@@ -223,7 +223,7 @@ const BlockchainSection = () => {
     <section className="py-32 px-[5%] relative text-white text-center overflow-hidden" ref={ref}>
       {/* Background with overlay */}
       <div className="absolute inset-0 z-0">
-        <Image src="/images/blockchain.jpg" alt="Blockchain background" fill className="object-cover" />
+        <Image src="/images/BlockChain.jpeg" alt="Blockchain background" fill className="object-cover" />
         <div className="absolute inset-0 bg-gradient-to-br from-purple-900/90 via-black/80 to-pink-900/90"></div>
       </div>
 
