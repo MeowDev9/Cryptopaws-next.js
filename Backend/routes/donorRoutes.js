@@ -222,9 +222,13 @@ router.delete("/unsave-welfare/:id", auth, async (req, res) => {
 // Create a new donation and trigger thank you message
 router.post("/donate", auth, async (req, res) => {
   try {
+    console.log("Received donation request:", req.body);
+    console.log("Authenticated donor ID:", req.user.id);
+
     const { caseId, welfareId, amount, txHash, amountUsd, blockchainData } = req.body;
     const donorId = req.user.id;
 
+    console.log("Creating donation record...");
     // Create a new donation record
     const donation = new Donation({
       donor: donorId,
@@ -237,15 +241,20 @@ router.post("/donate", auth, async (req, res) => {
       blockchainData
     });
 
+    console.log("Saving donation record...");
     await donation.save();
+    console.log("Donation record saved:", donation);
 
+    console.log("Updating case amount raised...");
     // Update the case's amountRaised
     await Case.findByIdAndUpdate(caseId, {
       $inc: { amountRaised: parseFloat(amountUsd) }
     });
+    console.log("Case amount raised updated");
 
     // Notify the welfare organization about the donation
     try {
+      console.log("Notifying welfare organization...");
       // Make a request to the welfare route to process the donation and send thank you
       const welfareResponse = await axios.post(
         `${process.env.BACKEND_URL || 'http://localhost:5001'}/api/welfare/process-donation`,
@@ -254,16 +263,18 @@ router.post("/donate", auth, async (req, res) => {
           caseId,
           amount,
           txHash,
-          amountUsd
+          amountUsd,
+          welfareId
         },
         {
           headers: {
             'Content-Type': 'application/json',
-            'x-auth-token': req.header('x-auth-token')
+            'x-internal-call': 'true'
           }
         }
       );
 
+      console.log("Welfare notification response:", welfareResponse.data);
       res.status(201).json({
         message: "Donation created successfully",
         donation,

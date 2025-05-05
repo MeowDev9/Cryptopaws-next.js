@@ -39,13 +39,15 @@ import {
   Heart,
   MapPin,
   Menu,
+  ClipboardList,
 } from "lucide-react"
 import ConnectWalletButton from "@/components/ConnectWalletButton"
 import Link from "next/link"
 import { useDonationContract } from "@/hooks/useDonationContract"
 import { ethers } from "ethers"
 import { useToast } from "@/components/ui/use-toast"
-import { DONATION_CONTRACT_ABI } from "@/app/config/contracts"
+import { DONATION_CONTRACT_ADDRESS, DONATION_CONTRACT_ABI } from "@/app/config/contracts"
+import { Button } from "@/components/ui/button"
 
 // Mock data for charts
 const donationData = [
@@ -118,37 +120,40 @@ interface Case {
 }
 
 interface Emergency {
-  _id: string
-  animalType: string
-  condition: string
-  location: string
-  description: string
-  name: string
-  phone: string
-  email?: string
-  status: string
-  assignedTo?: string
-  medicalIssue?: string
-  estimatedCost?: number
-  treatmentPlan?: string
-  images?: string[]
-  createdAt: string
-  updatedAt: string
+  _id: string;
+  animalType: string;
+  condition: string;
+  location: string;
+  description: string;
+  name: string;
+  phone: string;
+  email?: string;
+  status: string;
+  assignedTo?: string;
+  medicalIssue?: string;
+  estimatedCost?: number;
+  treatmentPlan?: string;
+  images?: string[];
+  createdAt: string;
+  updatedAt: string;
+  convertedToCase?: boolean;
+  caseId?: string;
 }
 
 interface Profile {
-  name: string
-  email: string
-  bio?: string
-  phone?: string
-  address?: string
-  website?: string
+  _id: string;
+  name: string;
+  email: string;
+  bio?: string;
+  phone?: string;
+  address?: string;
+  website?: string;
   socialLinks?: {
-    facebook?: string
-    instagram?: string
-  }
-  profilePicture?: string
-  blockchainAddress: string
+    facebook?: string;
+    instagram?: string;
+  };
+  profilePicture?: string;
+  blockchainAddress: string;
 }
 
 interface EmergencyDiagnosis {
@@ -223,6 +228,59 @@ interface Adoption {
   createdAt: string;
 }
 
+interface MonthlyDonation {
+  month: string;
+  amount: number;
+}
+
+interface CasePerformance {
+  name: string;
+  donations: number;
+}
+
+interface RecentDonation {
+  _id: string;
+  donor: string;
+  donorAddress: string;
+  amount: number;
+  amountUsd: number;
+  caseId: string;
+  caseTitle: string;
+  transactionHash: string;
+  date: string;
+}
+
+interface Donation {
+  amount: string;
+  timestamp: number;
+  message: string;
+  caseId: string;
+  donor: string;
+}
+
+// Add to the interface section
+interface AdoptionRequest {
+  _id: string;
+  adoptionId: string;
+  adoption: {
+    name: string;
+    type: string;
+    breed: string;
+    images: string[];
+  };
+  donor: {
+    _id: string;
+    name: string;
+    email: string;
+    phone: string;
+  };
+  status: 'pending' | 'approved' | 'rejected' | 'payment pending' | 'under review';
+  reason: string;
+  preferredContact: string;
+  createdAt: string;
+  paymentProof?: string;
+}
+
 export default function WelfareDashboard() {
   const router = useRouter()
   const [isSidebarOpen, setIsSidebarOpen] = useState(true)
@@ -231,6 +289,7 @@ export default function WelfareDashboard() {
   const [walletConnected, setWalletConnected] = useState(false)
   const [walletAddress, setWalletAddress] = useState("")
   const [profile, setProfile] = useState<Profile>({
+    _id: '',
     name: '',
     email: '',
     bio: '',
@@ -358,16 +417,61 @@ export default function WelfareDashboard() {
   const [paymentStatus, setPaymentStatus] = useState<'pending' | 'success' | 'failed'>('pending');
   const { registerOrganization } = useDonationContract();
   const { toast } = useToast();
+  const [isUpdating, setIsUpdating] = useState(false);
+  const [profileImage, setProfileImage] = useState<File | null>(null);
+  const [welfareToken, setWelfareToken] = useState<string | null>(null);
+
+  const [monthlyDonations, setMonthlyDonations] = useState<MonthlyDonation[]>([]);
+  const [casePerformance, setCasePerformance] = useState<CasePerformance[]>([]);
+  const [recentDonations, setRecentDonations] = useState<RecentDonation[]>([]);
+
+  // 1. Add status filter state
+  const [adoptionStatusFilter, setAdoptionStatusFilter] = useState<string>('all');
+
+  // Add to the state section
+  const [adoptionRequests, setAdoptionRequests] = useState<AdoptionRequest[]>([]);
+  const [loadingRequests, setLoadingRequests] = useState(false);
+  const [selectedRequest, setSelectedRequest] = useState<AdoptionRequest | null>(null);
+  const [showRequestModal, setShowRequestModal] = useState(false);
+
+  const handleError = (error: unknown): string => {
+    if (error instanceof Error) {
+      return error.message;
+    }
+    return 'An unknown error occurred';
+  };
+
+  // Initialize welfare token and check authentication
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const token = localStorage.getItem('welfareToken');
+      setWelfareToken(token);
+      
+      if (!token) {
+        router.push('/welfare/login');
+        return;
+      }
+
+      // Check wallet connection
+      if (window.ethereum) {
+        window.ethereum.request({ method: 'eth_accounts' })
+          .then((accounts: string[]) => {
+            if (accounts && accounts[0]) {
+              setWalletAddress(accounts[0]);
+              setWalletConnected(true);
+            }
+          })
+          .catch(console.error);
+      }
+    }
+  }, [router]);
 
   // Fetch cases when component mounts or active tab changes
   useEffect(() => {
     const fetchCases = async () => {
       try {
         const token = localStorage.getItem('welfareToken');
-        if (!token) {
-          router.push('/welfare/login');
-          return;
-        }
+        if (!token) return;
 
         const response = await fetch('http://localhost:5001/api/welfare/cases', {
           headers: {
@@ -379,12 +483,15 @@ export default function WelfareDashboard() {
           throw new Error('Failed to fetch cases');
         }
 
-        const data = await response.json();
-        console.log('Fetched cases:', data);
-        setCases(data);
-      } catch (error) {
+        const cases = await response.json();
+        setCases(cases);
+      } catch (error: unknown) {
         console.error('Error fetching cases:', error);
-        setError('Failed to fetch cases');
+        toast({
+          title: "Error",
+          description: handleError(error),
+          variant: "destructive",
+        });
       }
     };
 
@@ -439,18 +546,17 @@ export default function WelfareDashboard() {
 
   const handleWalletConnect = async (address: string) => {
     try {
-      const token = localStorage.getItem('welfareToken');
-      if (!token) {
+      if (!welfareToken) {
         router.push('/welfare/login');
         return;
       }
 
       // Update blockchain address in backend
-      const response = await fetch('http://localhost:5001/api/welfare/profile', {
+      const response = await fetch('http://localhost:5001/api/welfare/profile/update', {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
+          'Authorization': `Bearer ${welfareToken}`
         },
         body: JSON.stringify({ blockchainAddress: address })
       });
@@ -464,7 +570,7 @@ export default function WelfareDashboard() {
       // Register the organization in the smart contract
       await registerOrganization(
         data.welfare.name,
-        data.welfare.description || '',  // Add description parameter
+        data.welfare.description || '',
         address
       );
 
@@ -487,45 +593,25 @@ export default function WelfareDashboard() {
   const handleAddCase = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault()
 
-    // Check if wallet is connected
-    if (!walletConnected || !walletAddress) {
-      alert("Please connect your wallet before creating a case.");
-      return;
+    const formData = new FormData()
+    formData.append("title", newCase.title)
+    formData.append("description", newCase.description)
+    formData.append("targetAmount", newCase.targetAmount)
+    formData.append("welfareAddress", walletAddress)
+    if (newCase.images && newCase.images.length > 0) {
+      newCase.images.forEach((image) => {
+        formData.append("images", image)
+      })
+    }
+    // Append assignedDoctor if selected
+    if (newCase.assignedDoctor) {
+      formData.append("assignedDoctor", newCase.assignedDoctor)
     }
 
     const token = localStorage.getItem("welfareToken")
-    const formData = new FormData()
-    formData.append("title", newCase.title);
-    formData.append("description", newCase.description);
-    formData.append("targetAmount", newCase.targetAmount);
-
-    // Only append doctor and medical issue if they are provided
-    if (newCase.assignedDoctor) {
-      formData.append("assignedDoctor", newCase.assignedDoctor);
-    }
-    if (newCase.medicalIssue) {
-      formData.append("medicalIssue", newCase.medicalIssue);
-    }
-
-    // Append the costBreakdown fields correctly
-    formData.append("surgery", newCase.costBreakdown.surgery);
-    formData.append("medicine", newCase.costBreakdown.medicine);
-    formData.append("recovery", newCase.costBreakdown.recovery);
-    formData.append("other", newCase.costBreakdown.other);
-    
-    // Append multiple images
-    if (newCase.images && newCase.images.length > 0) {
-      newCase.images.forEach((image) => {
-        formData.append("images", image);
-      });
-    }
-
-    // Add the connected wallet address
-    formData.append("welfareAddress", walletAddress);
-
-    // Debugging: Log the FormData values
-    for (const pair of formData.entries()) {
-      console.log(pair[0], pair[1])
+    if (!token) {
+      alert("Please log in to create a case")
+      return
     }
 
     fetch("http://localhost:5001/api/welfare/cases", {
@@ -544,7 +630,30 @@ export default function WelfareDashboard() {
       })
       .then((data) => {
         console.log("Added new case:", data)
-        setCases([...cases, data])
+        // Fetch updated cases list
+        fetch("http://localhost:5001/api/welfare/cases", {
+          headers: {
+            'Authorization': `Bearer ${token}`
+          }
+        })
+          .then(res => res.json())
+          .then((updatedCases) => {
+            setCases(updatedCases);
+            toast({
+              title: "Success",
+              description: "Case created successfully",
+              variant: "default",
+            });
+          })
+          .catch((err: Error) => {
+            console.error("Error fetching updated cases:", err);
+            toast({
+              title: "Error",
+              description: "Failed to fetch updated cases",
+              variant: "destructive",
+            });
+          });
+        
         setShowAddCase(false)
         setNewCase({
           title: "",
@@ -562,9 +671,13 @@ export default function WelfareDashboard() {
           },
         })
       })
-      .catch((err) => {
+      .catch((err: Error) => {
         console.error("Error adding case:", err)
-        alert("Failed to create case. Please try again.");
+        toast({
+          title: "Error",
+          description: "Failed to create case. Please try again.",
+          variant: "destructive",
+        });
       })
   }
 
@@ -575,7 +688,7 @@ export default function WelfareDashboard() {
       const response = await fetch(`http://localhost:5001/api/welfare/cases/${id}`, {
         method: "DELETE",
         headers: {
-          Authorization: `Bearer ${token}`,
+          Authorization: `Bearer ${token}`
         },
       })
 
@@ -753,66 +866,98 @@ export default function WelfareDashboard() {
   };
 
   const createEmergencyCase = async () => {
-    if (!selectedEmergency) {
-      alert("Please select an emergency first");
-      return;
-    }
-
-    if (!walletAddress) {
-      alert("Please connect your wallet first");
-      return;
-    }
-
     try {
+      if (!selectedEmergency) {
+        throw new Error('Please select an emergency first');
+      }
+
+      const token = localStorage.getItem('welfareToken');
+      if (!token) {
+        throw new Error('No authentication token found');
+      }
+
+      const welfareId = profile?._id;
+      if (!welfareId) {
+        throw new Error('Welfare ID not found');
+      }
+
       // Create a new case from the emergency
       const response = await fetch(`http://localhost:5001/api/emergency/${selectedEmergency._id}/convert-to-case`, {
-        method: "POST",
+        method: 'POST',
         headers: {
-          "Content-Type": "application/json",
-          "Authorization": `Bearer ${localStorage.getItem("welfareToken")}`
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
         },
         body: JSON.stringify({
-          title: `Emergency: ${selectedEmergency.animalType} - ${selectedEmergency.condition}`,
+          title: selectedEmergency.animalType + " Emergency",
+          description: selectedEmergency.description,
           targetAmount: selectedEmergency.estimatedCost?.toString() || "0",
-          additionalDescription: selectedEmergency.treatmentPlan || "",
-          welfareAddress: walletAddress
+          category: "Emergency",
+          welfareId: welfareId
         })
       });
 
       if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.message || "Failed to create case");
+        throw new Error('Failed to create case');
       }
 
       const data = await response.json();
-      console.log("Case created:", data);
 
-      // Update the emergency in the local state
-      setEmergencies(prevEmergencies => 
-        prevEmergencies.map(emergency => 
-          emergency._id === selectedEmergency._id 
-            ? { 
-                ...emergency, 
-                convertedToCase: true, 
-                caseId: data.case._id, 
-                assignedTo: welfareId,
-                status: "Resolved" // Mark as resolved
-              }
-            : emergency
-        )
+      // Update the emergency status
+      const updatedEmergencies = emergencies.map(emergency =>
+        emergency._id === selectedEmergency._id
+          ? {
+              ...emergency,
+              convertedToCase: true,
+              caseId: data.case._id,
+              assignedTo: welfareId,
+              status: "Resolved"
+            }
+          : emergency
       );
 
-      // Close the modal and reset the selected emergency
-      setShowEmergencyDetails(false);
+      setEmergencies(updatedEmergencies);
       setSelectedEmergency(null);
 
       // Refresh the cases list
-      fetchCases();
+      const fetchCases = async () => {
+        try {
+          const response = await fetch('http://localhost:5001/api/welfare/cases', {
+            headers: {
+              'Authorization': `Bearer ${token}`
+            }
+          });
 
-      alert("Emergency successfully converted to case!");
-    } catch (error) {
+          if (!response.ok) {
+            throw new Error('Failed to fetch cases');
+          }
+
+          const casesData = await response.json();
+          setCases(casesData.cases);
+        } catch (error: unknown) {
+          console.error('Error fetching cases:', error);
+          toast({
+            title: "Error",
+            description: handleError(error),
+            variant: "destructive",
+          });
+        }
+      };
+
+      await fetchCases();
+
+      toast({
+        title: "Success",
+        description: "Emergency successfully converted to case!",
+        variant: "default",
+      });
+    } catch (error: unknown) {
       console.error("Error creating case:", error);
-      alert(error.message || "Failed to create case. Please try again.");
+      toast({
+        title: "Error",
+        description: handleError(error),
+        variant: "destructive",
+      });
     }
   };
 
@@ -1042,15 +1187,23 @@ export default function WelfareDashboard() {
         estimatedCost: ""
       });
       
-      alert("Case created successfully!");
-    } catch (error) {
+      toast({
+        title: "Success",
+        description: "Case created successfully!",
+        variant: "default",
+      });
+    } catch (error: unknown) {
       console.error("Error creating case:", error);
       console.error("Error details:", {
-        message: error.message,
-        stack: error.stack,
-        name: error.name
+        message: error instanceof Error ? error.message : "Unknown error",
+        stack: error instanceof Error ? error.stack : undefined,
+        name: error instanceof Error ? error.name : undefined
       });
-      alert(`Failed to create case: ${error.message}`);
+      toast({
+        title: "Error",
+        description: `Failed to create case: ${error instanceof Error ? error.message : "Unknown error"}`,
+        variant: "destructive",
+      });
     }
   };
 
@@ -1276,7 +1429,7 @@ export default function WelfareDashboard() {
       formData.append('location', newAdoption.location);
       formData.append('health', newAdoption.health);
       formData.append('behavior', newAdoption.behavior);
-      formData.append('postedByType', 'welfare');
+      formData.append('postedByType', 'WelfareOrganization');
       
       // Append each image file
       if (newAdoption.images && newAdoption.images.length > 0) {
@@ -1334,43 +1487,51 @@ export default function WelfareDashboard() {
 
   const handlePayment = async () => {
     try {
+      setPaymentStatus('pending');
       const token = localStorage.getItem('welfareToken');
-      if (!token) {
-        throw new Error('No authentication token found');
-      }
+      if (!token) throw new Error('No authentication token found');
 
-      // Here you would typically integrate with your payment gateway
+      // Here you would integrate with your payment system
       // For now, we'll simulate a successful payment
-      const adminWalletAddress = "0x1234567890123456789012345678901234567890"; // Hardcoded for now
-      const paymentAmount = "10"; // 10 USDT
+      await new Promise(resolve => setTimeout(resolve, 2000)); // Simulate payment processing
 
-      // Simulate payment processing
-      await new Promise(resolve => setTimeout(resolve, 2000));
-      
-      // After successful payment, process the adoption
-      const response = await fetch(`http://localhost:5001/api/adoption/${selectedAdoption?._id}/adopt`, {
+      // Update adoption status to 'adopted'
+      const response = await fetch(`http://localhost:5001/api/adoption/${selectedRequest?.adoptionId}/adopt`, {
         method: 'POST',
         headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
         },
-        body: JSON.stringify({
-          paymentAmount,
-          paymentAddress: adminWalletAddress
+        body: JSON.stringify({ 
+          adoptedBy: selectedRequest?.donor._id
         })
       });
 
       if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.message || 'Failed to process adoption');
+        throw new Error('Failed to update adoption status');
       }
 
       setPaymentStatus('success');
-      // Refresh adoptions list after successful adoption
+      toast({
+        title: "Payment Successful",
+        description: "The adoption has been completed successfully.",
+        variant: "default",
+      });
+
+      // Close modals and refresh data
+      setShowPaymentModal(false);
+      setShowRequestModal(false);
+      setSelectedRequest(null);
+      fetchAdoptionRequests();
       fetchAdoptions();
     } catch (error) {
-      console.error('Error processing payment:', error);
       setPaymentStatus('failed');
+      console.error('Error processing payment:', error);
+      toast({
+        title: "Payment Failed",
+        description: error instanceof Error ? error.message : "Failed to process payment",
+        variant: "destructive",
+      });
     }
   };
 
@@ -1591,76 +1752,19 @@ export default function WelfareDashboard() {
           return;
         }
 
-        // Get contract instance
         const provider = new ethers.JsonRpcProvider("http://localhost:8545");
         const contract = new ethers.Contract(
-          "0x5FbDB2315678afecb367f032d93F642f64180aa3",
+          DONATION_CONTRACT_ADDRESS,
           DONATION_CONTRACT_ABI,
           provider
         );
 
-        // Get organization info from blockchain
         const [name, description, walletAddress, isActive, totalDonations, uniqueDonors] = 
           await contract.getOrganizationInfo(profile.blockchainAddress);
 
-        // Get all donor history for this organization
         const donorHistory = await contract.getDonorHistory(profile.blockchainAddress);
-        
-        // Process donor history for statistics and charts
-        const monthlyDonations = [];
-        const casePerformance = [];
-        const recentDonations = [];
-        
-        // Group donations by month and prepare recent donations
-        const monthMap = new Map();
-        const caseMap = new Map();
-        
-        // Process each donation
-        donorHistory.forEach((donation: any) => {
-          const date = new Date(Number(donation.timestamp) * 1000);
-          const monthYear = `${date.toLocaleString('default', { month: 'short' })} ${date.getFullYear()}`;
-          const amount = parseFloat(ethers.formatEther(donation.amount));
-          
-          // Add to monthly totals
-          monthMap.set(monthYear, (monthMap.get(monthYear) || 0) + amount);
-          
-          // Add to case totals (using message as case identifier)
-          const caseTitle = donation.message || "General Donation";
-          caseMap.set(caseTitle, (caseMap.get(caseTitle) || 0) + amount);
-          
-          // Add to recent donations
-          recentDonations.push({
-            _id: donation.timestamp.toString(),
-            donor: donation.donor,
-            caseTitle: caseTitle,
-            amount: amount,
-            amountUsd: amount * 3000, // Using fixed ETH to USD rate
-            date: date.toISOString(),
-            transactionHash: "0x" // Blockchain transactions don't have hash in this format
-          });
-        });
+        const { monthlyDonations, casePerformance, recentDonations } = processDonationData(donorHistory);
 
-        // Convert monthMap to array for chart
-        monthMap.forEach((amount, month) => {
-          monthlyDonations.push({ month, amount });
-        });
-
-        // Sort by month
-        monthlyDonations.sort((a, b) => {
-          const [aMonth, aYear] = a.month.split(' ');
-          const [bMonth, bYear] = b.month.split(' ');
-          return new Date(`${aMonth} 1, ${aYear}`).getTime() - new Date(`${bMonth} 1, ${bYear}`).getTime();
-        });
-
-        // Convert caseMap to array for chart
-        caseMap.forEach((amount, name) => {
-          casePerformance.push({ name, donations: amount });
-        });
-
-        // Sort by donation amount
-        casePerformance.sort((a, b) => b.donations - a.donations);
-
-        // Update donations state with blockchain data
         setDonations({
           total: parseFloat(ethers.formatEther(totalDonations)),
           totalUsd: parseFloat(ethers.formatEther(totalDonations)) * 3000,
@@ -1670,26 +1774,19 @@ export default function WelfareDashboard() {
             ? ((monthlyDonations[monthlyDonations.length - 1]?.amount || 0) - (monthlyDonations[monthlyDonations.length - 2]?.amount || 0)) / (monthlyDonations[monthlyDonations.length - 2]?.amount || 1) * 100
             : 0,
           uniqueDonors: Number(uniqueDonors),
-          newDonorsThisMonth: 0, // Blockchain doesn't track this
-          donorPercentChange: 0, // Blockchain doesn't track this
+          newDonorsThisMonth: 0,
+          donorPercentChange: 0,
           items: recentDonations
         });
 
-        // Update donors count
-        setDonorsCount({
-          total: Number(uniqueDonors),
-          thisMonth: 0,
-          percentChange: 0
-        });
-
-        // Update charts
         setDashboardCharts({
           donationsByMonth: monthlyDonations,
           casePerformance: casePerformance
         });
 
-      } catch (error) {
-        console.error('Error fetching blockchain data:', error);
+      } catch (error: unknown) {
+        console.error("Error fetching blockchain data:", error);
+        setError(handleError(error));
       }
     };
 
@@ -1749,7 +1846,7 @@ export default function WelfareDashboard() {
         if (profile?.blockchainAddress) {
           const provider = new ethers.JsonRpcProvider("http://localhost:8545");
           const contract = new ethers.Contract(
-            "0x5FbDB2315678afecb367f032d93F642f64180aa3",
+            DONATION_CONTRACT_ADDRESS,
             DONATION_CONTRACT_ABI,
             provider
           );
@@ -1785,6 +1882,197 @@ export default function WelfareDashboard() {
     // Clean up interval on component unmount
     return () => clearInterval(interval);
   }, [profile?.blockchainAddress]);
+
+  const processDonationData = (donations: Donation[]) => {
+    const monthlyDonations: MonthlyDonation[] = [];
+    const casePerformance: CasePerformance[] = [];
+    const recentDonations: RecentDonation[] = [];
+
+    const monthMap = new Map<string, number>();
+    const caseMap = new Map<string, { name: string; donations: number }>();
+
+    donations.forEach((donation) => {
+      const date = new Date(Number(donation.timestamp) * 1000);
+      const monthYear = `${date.toLocaleString('default', { month: 'long' })} ${date.getFullYear()}`;
+      const amount = parseFloat(ethers.formatEther(donation.amount));
+      
+      // Update monthly donations
+      const currentAmount = monthMap.get(monthYear) || 0;
+      monthMap.set(monthYear, currentAmount + amount);
+
+      // Update case performance
+      const caseTitle = donation.message || "General Donation";
+      const currentCase = caseMap.get(donation.caseId) || { name: caseTitle, donations: 0 };
+      caseMap.set(donation.caseId, {
+        name: caseTitle,
+        donations: currentCase.donations + amount
+      });
+
+      // Add to recent donations
+      recentDonations.push({
+        _id: `${donation.timestamp}-${donation.donor}`,
+        donor: donation.donor,
+        donorAddress: donation.donor,
+        amount: amount,
+        amountUsd: amount * 3000,
+        caseId: donation.caseId,
+        caseTitle: caseTitle,
+        transactionHash: "0x", // Blockchain transactions don't have hash in this format
+        date: date.toISOString()
+      });
+    });
+
+    // Convert monthMap to monthlyDonations array
+    monthMap.forEach((amount, month) => {
+      monthlyDonations.push({ month, amount });
+    });
+
+    // Convert caseMap to casePerformance array
+    const casePerformanceArray: CasePerformance[] = Array.from(caseMap.values());
+
+    return { 
+      monthlyDonations, 
+      casePerformance: casePerformanceArray, 
+      recentDonations 
+    };
+  };
+
+  // Add this function to fetch adoption requests
+  const fetchAdoptionRequests = async () => {
+    try {
+      setLoadingRequests(true);
+      const token = localStorage.getItem('welfareToken');
+      if (!token) throw new Error('No authentication token found');
+
+      const response = await fetch('http://localhost:5001/api/adoption-request/welfare', {
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to fetch adoption requests');
+      }
+
+      const data = await response.json();
+      setAdoptionRequests(data);
+    } catch (error) {
+      console.error('Error fetching adoption requests:', error);
+      setError(error instanceof Error ? error.message : 'Failed to load adoption requests');
+    } finally {
+      setLoadingRequests(false);
+    }
+  };
+
+  // Add function to update request status
+  const updateRequestStatus = async (requestId: string, status: 'approved' | 'rejected') => {
+    try {
+      const token = localStorage.getItem('welfareToken');
+      if (!token) throw new Error('No authentication token found');
+
+      const response = await fetch(`http://localhost:5001/api/adoption-request/${requestId}`, {
+        method: 'PATCH',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ 
+          status,
+          adoptedBy: selectedRequest?.donor._id
+        })
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to update request status');
+      }
+
+      // Update the local state
+      setAdoptionRequests(prev => prev.map(request => 
+        request._id === requestId ? { ...request, status } : request
+      ));
+
+      // Update the adoption status if approved
+      if (status === 'approved') {
+        const adoptionResponse = await fetch(`http://localhost:5001/api/adoption/${selectedRequest?.adoptionId}/adopt`, {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({ 
+            adoptedBy: selectedRequest?.donor._id
+          })
+        });
+
+        if (!adoptionResponse.ok) {
+          throw new Error('Failed to update adoption status');
+        }
+      }
+
+      toast({
+        title: "Success",
+        description: `Adoption request ${status} successfully`,
+        variant: "default",
+      });
+    } catch (error) {
+      console.error('Error updating request status:', error);
+      toast({
+        title: "Error",
+        description: error instanceof Error ? error.message : "Failed to update request status",
+        variant: "destructive",
+      });
+    }
+  };
+
+  // Add to useEffect for adoption requests
+  useEffect(() => {
+    if (activeTab === 'adoption-requests') {
+      fetchAdoptionRequests();
+    }
+  }, [activeTab]);
+
+  const handleVerifyPayment = async (requestId: string, verified: boolean) => {
+    try {
+      // Get the request to check its current status
+      const request = adoptionRequests.find((r: AdoptionRequest) => r._id === requestId);
+      if (!request) {
+        throw new Error('Request not found');
+      }
+
+      if (request.status !== 'under review') {
+        throw new Error('Payment is not under review');
+      }
+
+      const response = await fetch(`http://localhost:5001/api/adoption-request/${requestId}/verify-payment`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${localStorage.getItem('welfareToken')}`
+        },
+        body: JSON.stringify({ verified })
+      });
+
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.message || 'Failed to verify payment');
+      }
+
+      // Refresh the requests list
+      await fetchAdoptionRequests();
+      toast({
+        title: "Success",
+        description: `Payment ${verified ? 'verified' : 'rejected'} successfully`,
+        variant: "default",
+      });
+    } catch (error) {
+      console.error('Error verifying payment:', error);
+      toast({
+        title: "Error",
+        description: error instanceof Error ? error.message : "Failed to verify payment",
+        variant: "destructive",
+      });
+    }
+  };
 
   return (
     <ErrorBoundary>
@@ -1924,6 +2212,16 @@ export default function WelfareDashboard() {
               <Heart className="h-5 w-5" />
               {isSidebarOpen && <span className="ml-3">Adoptions</span>}
             </button>
+
+            <button
+              onClick={() => setActiveTab("adoption-requests")}
+              className={`flex items-center w-full p-2 rounded-md ${
+                activeTab === "adoption-requests" ? "bg-purple-600 text-white" : "hover:bg-gray-700 text-gray-300"
+              }`}
+            >
+              <ClipboardList className="h-5 w-5" />
+              {isSidebarOpen && <span className="ml-3">Adoption Requests</span>}
+            </button>
           </nav>
         </div>
       </div>
@@ -1943,6 +2241,7 @@ export default function WelfareDashboard() {
             {activeTab === "analytics" && "Analytics"}
             {activeTab === "settings" && "Account Settings"}
             {activeTab === "adoptions" && "Adoption Management"}
+            {activeTab === "adoption-requests" && "Adoption Requests"}
           </h1>
           <div className="flex items-center space-x-4">
             {!walletConnected ? (
@@ -2143,7 +2442,7 @@ export default function WelfareDashboard() {
               </div>
 
               {showAddCase && (
-                <div className="bg-gray-800 rounded-lg shadow p-6 border border-gray-700">
+                <div className="bg-gray-800 rounded-lg shadow p-6 border border-gray-700 max-w-4xl mx-auto">
                   <h3 className="text-lg font-medium mb-4 text-white">Add New Donation Case</h3>
                   <form onSubmit={handleAddCase} className="space-y-4">
                     <div>
@@ -2282,7 +2581,7 @@ export default function WelfareDashboard() {
               )}
 
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                {cases.length > 0 ? (
+                {Array.isArray(cases) && cases.length > 0 ? (
                   cases.map((c) => (
                     <div key={c._id || `case-${c.title}-${c.createdAt}`} className="bg-gray-800 rounded-lg shadow overflow-hidden border border-gray-700">
                       <div className="h-48 bg-gray-700 relative">
@@ -2943,21 +3242,33 @@ export default function WelfareDashboard() {
           {/* Adoptions Tab */}
           {activeTab === "adoptions" && (
             <div className="space-y-6">
-              <div className="flex justify-between items-center">
+              <div className="flex justify-between items-center mb-4">
                 <h2 className="text-xl font-semibold text-white">Adoption Management</h2>
-                <button
-                  onClick={() => setShowAddAdoption(true)}
-                  className="bg-purple-600 text-white px-4 py-2 rounded-md flex items-center hover:bg-purple-700 transition-colors"
-                >
-                  <Plus className="h-4 w-4 mr-2" /> Post New Adoption
-                </button>
+                <div className="flex items-center gap-4">
+                  <select
+                    value={adoptionStatusFilter}
+                    onChange={e => setAdoptionStatusFilter(e.target.value)}
+                    className="bg-gray-700 text-white rounded px-3 py-1 border border-gray-600 focus:outline-none"
+                  >
+                    <option value="all">All</option>
+                    <option value="available">Available</option>
+                    <option value="reserved">Reserved</option>
+                    <option value="adopted">Adopted</option>
+                  </select>
+                  <button
+                    onClick={() => setShowAddAdoption(true)}
+                    className="bg-purple-600 text-white px-4 py-2 rounded-md flex items-center hover:bg-purple-700 transition-colors"
+                  >
+                    <Plus className="h-4 w-4 mr-2" /> Post New Adoption
+                  </button>
+                </div>
               </div>
 
               {/* Add Adoption Modal */}
               {showAddAdoption && (
                 <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-20 p-4 overflow-y-auto">
-                  <div className="bg-gray-800 rounded-lg shadow-lg p-6 w-full max-w-4xl mx-auto my-8 border border-gray-700">
-                    <div className="flex justify-between items-start mb-4">
+                  <div className="bg-gray-800 rounded-lg shadow-lg p-4 sm:p-6 w-full max-w-4xl mx-auto my-4 sm:my-8 border border-gray-700 max-h-[90vh] overflow-y-auto">
+                    <div className="flex justify-between items-start mb-4 sticky top-0 bg-gray-800 z-10 pb-4 border-b border-gray-700">
                       <h3 className="text-lg font-medium text-white">Post New Adoption</h3>
                       <button
                         onClick={() => setShowAddAdoption(false)}
@@ -2968,9 +3279,9 @@ export default function WelfareDashboard() {
                     </div>
 
                     <form onSubmit={handleAddAdoption} className="space-y-4">
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        <div>
-                          <label className="block text-sm font-medium text-gray-300 mb-1">Name</label>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
+                        <div className="space-y-1">
+                          <label className="block text-sm font-medium text-gray-300">Name</label>
                           <input
                             type="text"
                             value={newAdoption.name}
@@ -2980,8 +3291,8 @@ export default function WelfareDashboard() {
                           />
                         </div>
 
-                        <div>
-                          <label className="block text-sm font-medium text-gray-300 mb-1">Type</label>
+                        <div className="space-y-1">
+                          <label className="block text-sm font-medium text-gray-300">Type</label>
                           <select
                             value={newAdoption.type}
                             onChange={(e) => setNewAdoption({...newAdoption, type: e.target.value})}
@@ -2995,8 +3306,8 @@ export default function WelfareDashboard() {
                           </select>
                         </div>
 
-                        <div>
-                          <label className="block text-sm font-medium text-gray-300 mb-1">Breed</label>
+                        <div className="space-y-1">
+                          <label className="block text-sm font-medium text-gray-300">Breed</label>
                           <input
                             type="text"
                             value={newAdoption.breed}
@@ -3006,8 +3317,8 @@ export default function WelfareDashboard() {
                           />
                         </div>
 
-                        <div>
-                          <label className="block text-sm font-medium text-gray-300 mb-1">Age</label>
+                        <div className="space-y-1">
+                          <label className="block text-sm font-medium text-gray-300">Age</label>
                           <input
                             type="text"
                             value={newAdoption.age}
@@ -3017,8 +3328,8 @@ export default function WelfareDashboard() {
                           />
                         </div>
 
-                        <div>
-                          <label className="block text-sm font-medium text-gray-300 mb-1">Gender</label>
+                        <div className="space-y-1">
+                          <label className="block text-sm font-medium text-gray-300">Gender</label>
                           <select
                             value={newAdoption.gender}
                             onChange={(e) => setNewAdoption({...newAdoption, gender: e.target.value})}
@@ -3031,8 +3342,8 @@ export default function WelfareDashboard() {
                           </select>
                         </div>
 
-                        <div>
-                          <label className="block text-sm font-medium text-gray-300 mb-1">Size</label>
+                        <div className="space-y-1">
+                          <label className="block text-sm font-medium text-gray-300">Size</label>
                           <select
                             value={newAdoption.size}
                             onChange={(e) => setNewAdoption({...newAdoption, size: e.target.value})}
@@ -3046,8 +3357,8 @@ export default function WelfareDashboard() {
                           </select>
                         </div>
 
-                        <div className="md:col-span-2">
-                          <label className="block text-sm font-medium text-gray-300 mb-1">Description</label>
+                        <div className="space-y-1 sm:col-span-2">
+                          <label className="block text-sm font-medium text-gray-300">Description</label>
                           <textarea
                             value={newAdoption.description}
                             onChange={(e) => setNewAdoption({...newAdoption, description: e.target.value})}
@@ -3056,8 +3367,8 @@ export default function WelfareDashboard() {
                           />
                         </div>
 
-                        <div>
-                          <label className="block text-sm font-medium text-gray-300 mb-1">Location</label>
+                        <div className="space-y-1">
+                          <label className="block text-sm font-medium text-gray-300">Location</label>
                           <input
                             type="text"
                             value={newAdoption.location}
@@ -3067,8 +3378,8 @@ export default function WelfareDashboard() {
                           />
                         </div>
 
-                        <div>
-                          <label className="block text-sm font-medium text-gray-300 mb-1">Contact Number</label>
+                        <div className="space-y-1">
+                          <label className="block text-sm font-medium text-gray-300">Contact Number</label>
                           <input
                             type="text"
                             value={newAdoption.contactNumber}
@@ -3078,8 +3389,8 @@ export default function WelfareDashboard() {
                           />
                         </div>
 
-                        <div className="md:col-span-2">
-                          <label className="block text-sm font-medium text-gray-300 mb-1">Health Information</label>
+                        <div className="space-y-1 sm:col-span-2">
+                          <label className="block text-sm font-medium text-gray-300">Health Information</label>
                           <textarea
                             value={newAdoption.health}
                             onChange={(e) => setNewAdoption({...newAdoption, health: e.target.value})}
@@ -3088,8 +3399,8 @@ export default function WelfareDashboard() {
                           />
                         </div>
 
-                        <div className="md:col-span-2">
-                          <label className="block text-sm font-medium text-gray-300 mb-1">Behavior</label>
+                        <div className="space-y-1 sm:col-span-2">
+                          <label className="block text-sm font-medium text-gray-300">Behavior</label>
                           <textarea
                             value={newAdoption.behavior}
                             onChange={(e) => setNewAdoption({...newAdoption, behavior: e.target.value})}
@@ -3098,8 +3409,8 @@ export default function WelfareDashboard() {
                           />
                         </div>
 
-                        <div className="md:col-span-2">
-                          <label className="block text-sm font-medium text-gray-300 mb-1">Images</label>
+                        <div className="space-y-1 sm:col-span-2">
+                          <label className="block text-sm font-medium text-gray-300">Images</label>
                           <input
                             type="file"
                             multiple
@@ -3112,7 +3423,7 @@ export default function WelfareDashboard() {
                         </div>
                       </div>
 
-                      <div className="flex justify-end space-x-3 mt-6">
+                      <div className="flex justify-end space-x-3 mt-6 sticky bottom-0 bg-gray-800 pt-4 border-t border-gray-700">
                         <button
                           type="button"
                           onClick={() => setShowAddAdoption(false)}
@@ -3133,53 +3444,108 @@ export default function WelfareDashboard() {
               )}
 
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                {adoptions.length > 0 ? adoptions.map((adoption) => (
-                  <div key={adoption._id} className="bg-gray-800 rounded-lg shadow overflow-hidden border border-gray-700">
-                    <div className="h-48 bg-gray-700 relative">
-                      {adoption.images && adoption.images.length > 0 ? (
-                        <img
-                          src={`http://localhost:5001/${adoption.images[0]}`}
-                          alt={adoption.name}
-                          className="w-full h-48 object-cover rounded-t-lg"
-                        />
-                      ) : (
-                        <div className="w-full h-full flex items-center justify-center text-gray-400">
-                          No Image
+                {adoptions.filter(a => adoptionStatusFilter === 'all' ? true : a.status === adoptionStatusFilter).length > 0 ? adoptions.filter(a => adoptionStatusFilter === 'all' ? true : a.status === adoptionStatusFilter).map((adoption) => {
+                  console.log('profile._id:', profile._id, 'adoption.postedBy:', adoption.postedBy);
+                  if (typeof adoption.postedBy === 'object' && adoption.postedBy !== null) {
+                    console.log('adoption.postedBy._id:', (adoption.postedBy as any)._id);
+                  }
+                  let isOwnListing = false;
+                  let welfareName = '';
+                  if (typeof adoption.postedBy === 'object' && adoption.postedBy !== null) {
+                    isOwnListing = String(profile._id) === String((adoption.postedBy as any)._id);
+                    welfareName = (adoption.postedBy as any).name || '';
+                  } else if (typeof adoption.postedBy === 'string') {
+                    isOwnListing = String(profile._id) === String(adoption.postedBy);
+                    welfareName = adoption.postedBy;
+                  }
+
+                  // Find related requests for this adoption
+                  const relatedRequests = adoptionRequests.filter(r => r.adoptionId === adoption._id);
+                  const hasApprovedRequest = relatedRequests.some(r => r.status === 'approved');
+                  const hasUnderReviewRequest = relatedRequests.some(r => r.status === 'under review');
+
+                  let badgeText = '';
+                  let badgeClass = '';
+                  if (adoption.status === 'adopted') {
+                    badgeText = 'Adopted';
+                    badgeClass = 'bg-green-700 text-white';
+                  } else if (hasUnderReviewRequest) {
+                    badgeText = 'Pending Payment';
+                    badgeClass = 'bg-blue-600 text-white';
+                  } else if (hasApprovedRequest) {
+                    badgeText = 'Reserved';
+                    badgeClass = 'bg-yellow-500 text-gray-900';
+                  } else if (adoption.status === 'available') {
+                    badgeText = 'Available';
+                    badgeClass = 'bg-green-600 text-white';
+                  } else {
+                    badgeText = adoption.status.charAt(0).toUpperCase() + adoption.status.slice(1);
+                    badgeClass = 'bg-gray-500 text-white';
+                  }
+
+                  return (
+                    <div key={adoption._id} className="bg-gray-800 rounded-lg shadow overflow-hidden border border-gray-700">
+                      <div className="h-48 bg-gray-700 relative">
+                        {/* Status badge */}
+                        <span className={`absolute top-2 left-2 px-3 py-1 text-xs font-bold rounded-full ${badgeClass}`}>{badgeText}</span>
+                        {adoption.images && adoption.images.length > 0 ? (
+                          <img
+                            src={`http://localhost:5001/${adoption.images[0]}`}
+                            alt={adoption.name}
+                            className="w-full h-48 object-cover rounded-t-lg"
+                          />
+                        ) : (
+                          <div className="w-full h-full flex items-center justify-center text-gray-400">
+                            No Image
+                          </div>
+                        )}
+                      </div>
+                      <div className="p-5">
+                        <div className="mb-2">
+                          <span className="block text-xs text-gray-400">Name:</span>
+                          <span className="font-semibold text-lg text-white">{adoption.name}</span>
                         </div>
-                      )}
-                    </div>
-                    <div className="p-5">
-                      <h3 className="font-semibold text-lg text-white mb-1">{adoption.name}</h3>
-                      <p className="text-purple-400 text-sm mb-3">
-                        {adoption.type} • {adoption.breed} • {adoption.age}
-                      </p>
-                      
-                      <div className="space-y-2 mb-4">
-                        <div className="flex items-center text-gray-300 text-sm">
-                          <MapPin className="h-4 w-4 mr-2 text-gray-500" />
-                          <span>{adoption.location}</span>
+                        <div className="mb-2 grid grid-cols-2 gap-2 text-sm">
+                          <div><span className="text-gray-400">Breed:</span> <span className="text-white">{adoption.breed}</span></div>
+                          <div><span className="text-gray-400">Type:</span> <span className="text-white">{adoption.type}</span></div>
+                          <div><span className="text-gray-400">Age:</span> <span className="text-white">{adoption.age} {adoption.age && !adoption.age.toLowerCase().includes('year') ? 'years' : ''}</span></div>
+                          <div><span className="text-gray-400">Gender:</span> <span className="text-white">{adoption.gender}</span></div>
+                          <div><span className="text-gray-400">Size:</span> <span className="text-white">{adoption.size}</span></div>
                         </div>
-                        <div className="flex items-center text-gray-300 text-sm">
+                        <div className="mb-2 text-sm"><span className="text-gray-400">Location:</span> <span className="text-white">{adoption.location}</span></div>
+                        <div className="mb-2 text-sm"><span className="text-gray-400">Health:</span> <span className="text-white">{adoption.health}</span></div>
+                        <div className="mb-2 text-sm"><span className="text-gray-400">Behavior:</span> <span className="text-white">{adoption.behavior}</span></div>
+                        <div className="mb-2 text-sm"><span className="text-gray-400">Contact:</span> <span className="text-white">{adoption.contactNumber}</span></div>
+                        <div className="mb-2 text-sm flex items-center">
                           <User className="h-4 w-4 mr-2 text-gray-500" />
-                          <span>Posted by: {adoption.postedBy} ({adoption.postedByType === 'donor' ? 'Donor' : 'Welfare Organization'})</span>
+                          <span className="text-gray-400">Posted by:</span> {/* 4. Welfare org name clickable */}
+                          {typeof adoption.postedBy === 'object' && adoption.postedBy !== null ? (
+                            <Link href={`/welfare/${(adoption.postedBy as any)._id}`} className="text-purple-400 hover:underline ml-1">{(adoption.postedBy as any).name}</Link>
+                          ) : (
+                            <span className="ml-1">{adoption.postedBy}</span>
+                          )}
+                          <span className="ml-1">({adoption.postedByType === 'donor' ? 'Donor' : 'Welfare Organization'})</span>
                         </div>
-                        <div className="flex items-center text-gray-300 text-sm">
-                          <Phone className="h-4 w-4 mr-2 text-gray-500" />
-                          <span>Contact: {adoption.contactNumber}</span>
+                        <div className="flex justify-end space-x-2 mt-4">
+                          {isOwnListing ? (
+                            adoption.status === 'adopted' ? (
+                              <span className="px-3 py-1 bg-green-700 text-white rounded-md text-sm">Adopted</span>
+                            ) : null // Remove Mark as Adopted for untouched cases
+                          ) : (
+                            adoption.status === 'available' && (
+                              <button 
+                                onClick={() => handleAdopt(adoption)}
+                                className="px-3 py-1 bg-purple-600 text-white rounded-md hover:bg-purple-700 text-sm"
+                              >
+                                Adopt
+                              </button>
+                            )
+                          )}
                         </div>
-                      </div>
-                      
-                      <div className="flex justify-end space-x-2">
-                        <button 
-                          onClick={() => handleAdopt(adoption)}
-                          className="px-3 py-1 bg-purple-600 text-white rounded-md hover:bg-purple-700 text-sm"
-                        >
-                          Adopt
-                        </button>
                       </div>
                     </div>
-                  </div>
-                )) : (
+                  );
+                }) : (
                   <div className="col-span-full bg-gray-800 rounded-lg shadow p-8 text-center border border-gray-700">
                     <div className="flex flex-col items-center">
                       <Heart className="h-12 w-12 text-gray-500 mb-4" />
@@ -3229,6 +3595,165 @@ export default function WelfareDashboard() {
                   </div>
                 </div>
               )}
+            </div>
+          )}
+
+          {/* Adoption Requests Tab */}
+          {activeTab === "adoption-requests" && (
+            <div className="space-y-6">
+              <div className="flex justify-between items-center mb-4">
+                <h2 className="text-xl font-semibold text-white">Adoption Requests</h2>
+              </div>
+
+              {loadingRequests ? (
+                <div className="flex justify-center items-center h-64">
+                  <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-purple-500"></div>
+                </div>
+              ) : adoptionRequests.length > 0 ? (
+                <div className="grid grid-cols-1 gap-6">
+                  {adoptionRequests.map((request) => {
+                    console.log('Request status:', request.status, request);
+                    return (
+                      <div key={request._id} className="bg-gray-800 rounded-lg shadow overflow-hidden border border-gray-700">
+                        <div className="p-5">
+                          <div className="flex justify-between items-start mb-4">
+                            <div>
+                              <h3 className="font-semibold text-lg text-white mb-1">{request.adoption.name}</h3>
+                              <p className="text-purple-400 text-sm">
+                                {request.adoption.type} • {request.adoption.breed}
+                              </p>
+                            </div>
+                            <span className={`px-3 py-1 text-xs font-bold rounded-full ${
+                              request.status === 'pending' ? 'bg-yellow-500 text-gray-900' :
+                              request.status === 'approved' ? 'bg-green-600 text-white' :
+                              request.status === 'payment pending' ? 'bg-blue-600 text-white' :
+                              request.status === 'under review' ? 'bg-purple-600 text-white' :
+                              'bg-red-600 text-white'
+                            }`}>
+                              {request.status.charAt(0).toUpperCase() + request.status.slice(1)}
+                            </span>
+                          </div>
+                          
+                          <div className="space-y-3">
+                            <div>
+                              <p className="text-gray-400 text-sm">Requested by</p>
+                              <p className="text-gray-300">{request.donor.name}</p>
+                            </div>
+                            <div>
+                              <p className="text-gray-400 text-sm">Contact Information</p>
+                              <p className="text-gray-300">{request.donor.email}</p>
+                              <p className="text-gray-300">{request.donor.phone}</p>
+                            </div>
+                            <div>
+                              <p className="text-gray-400 text-sm">Reason for Adoption</p>
+                              <p className="text-gray-300">{request.reason}</p>
+                            </div>
+                            <div>
+                              <p className="text-gray-400 text-sm">Preferred Contact Method</p>
+                              <p className="text-gray-300">{request.preferredContact}</p>
+                            </div>
+                            <div>
+                              <p className="text-gray-400 text-sm">Requested On</p>
+                              <p className="text-gray-300">{new Date(request.createdAt).toLocaleDateString()}</p>
+                            </div>
+                            {request.status === 'under review' && request.paymentProof && (
+                              <div className="mt-4">
+                                <h4 className="text-sm font-medium text-gray-300 mb-2">Payment Proof</h4>
+                                {request.paymentProof.endsWith('.jpg') || request.paymentProof.endsWith('.png') ? (
+                                  <img 
+                                    src={`http://localhost:5001/${request.paymentProof}`} 
+                                    alt="Payment Proof" 
+                                    className="w-full h-48 object-cover rounded-lg mb-2"
+                                  />
+                                ) : (
+                                  <div className="bg-gray-700 text-white p-2 rounded mb-2 break-all">
+                                    {request.paymentProof}
+                                  </div>
+                                )}
+                                <div className="flex gap-2">
+                                  <Button onClick={() => handleVerifyPayment(request._id, true)} className="bg-green-600 hover:bg-green-700">
+                                    Verify Payment
+                                  </Button>
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                          {/* Add Manage Request button for pending requests */}
+                          {request.status.toLowerCase() === 'pending' && (
+                            <div className="flex justify-end mt-4">
+                              <button
+                                onClick={() => {
+                                  setSelectedRequest(request);
+                                  setShowRequestModal(true);
+                                }}
+                                className="px-3 py-1 bg-purple-600 text-white rounded-md hover:bg-purple-700 text-sm"
+                              >
+                                Manage Request
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              ) : (
+                <div className="bg-gray-800 rounded-lg shadow p-8 text-center border border-gray-700">
+                  <ClipboardList className="h-12 w-12 text-gray-500 mx-auto mb-4" />
+                  <p className="text-gray-300 mb-2">No adoption requests yet.</p>
+                  <p className="text-gray-400 mb-6 text-sm">Requests will appear here when donors submit them.</p>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Request Management Modal */}
+          {showRequestModal && selectedRequest && (
+            <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-30 p-4">
+              <div className="bg-gray-800 rounded-lg shadow-lg p-6 max-w-md w-full border border-gray-700">
+                <div className="flex justify-between items-center mb-4">
+                  <h3 className="text-lg font-medium text-white">Manage Adoption Request</h3>
+                  <button
+                    onClick={() => {
+                      setShowRequestModal(false);
+                      setSelectedRequest(null);
+                    }}
+                    className="text-gray-400 hover:text-gray-300"
+                  >
+                    <X className="h-5 w-5" />
+                  </button>
+                </div>
+
+                <div className="space-y-4">
+                  <div>
+                    <p className="text-gray-400 text-sm">Animal</p>
+                    <p className="text-gray-300">{selectedRequest.adoption.name}</p>
+                  </div>
+                  <div>
+                    <p className="text-gray-400 text-sm">Requested by</p>
+                    <p className="text-gray-300">{selectedRequest.donor.name}</p>
+                  </div>
+                  <div>
+                    <p className="text-gray-400 text-sm">Reason</p>
+                    <p className="text-gray-300">{selectedRequest.reason}</p>
+                  </div>
+                </div>
+
+                <div className="flex justify-end space-x-3 mt-6">
+                  <button
+                    onClick={() => updateRequestStatus(selectedRequest._id, 'rejected')}
+                    className="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700"
+                  >
+                    Reject
+                  </button>
+                  <button
+                    onClick={() => updateRequestStatus(selectedRequest._id, 'approved')}
+                    className="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700"
+                  >
+                    Approve Request
+                  </button>
+                </div>
+              </div>
             </div>
           )}
         </main>

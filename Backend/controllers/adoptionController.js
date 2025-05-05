@@ -6,7 +6,9 @@ const mongoose = require('mongoose');
 // Get all adoptions
 exports.getAllAdoptions = async (req, res) => {
   try {
-    const adoptions = await Adoption.find().sort({ createdAt: -1 });
+    const adoptions = await Adoption.find()
+      .populate('postedBy', 'name')
+      .sort({ createdAt: -1 });
     res.status(200).json(adoptions);
   } catch (error) {
     res.status(500).json({ message: 'Error fetching adoptions', error: error.message });
@@ -68,7 +70,7 @@ exports.createAdoption = async (req, res) => {
     const images = req.files ? req.files.map(file => file.path) : [];
 
     // Validate postedByType
-    if (!['donor', 'welfare'].includes(postedByType)) {
+    if (!['User', 'WelfareOrganization'].includes(postedByType)) {
       return res.status(400).json({ message: 'Invalid postedByType' });
     }
 
@@ -171,8 +173,8 @@ exports.processAdoption = async (req, res) => {
       return res.status(404).json({ message: 'Adoption not found' });
     }
 
-    adoption.status = 'Adopted';
-    adoption.adoptedBy = req.user.id; // The authenticated user who is adopting
+    adoption.status = 'adopted';
+    adoption.adoptedBy = req.body.adoptedBy; // Use the donorId from the request body
 
     await adoption.save();
     res.json(adoption);

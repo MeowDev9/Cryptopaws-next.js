@@ -19,7 +19,7 @@ export interface OrganizationInfo {
 }
 
 export interface DonationStatus {
-    status: 'pending' | 'success' | 'failed';
+    status: 'pending' | 'success' | 'failed' | 'already_registered';
     txHash?: string;
     error?: string;
 }
@@ -69,54 +69,74 @@ export function useDonationContract() {
         setError(null);
 
         try {
+            console.log('Starting organization registration with:', { name, description, walletAddress });
+            
             // Get the contract instance
             const contract = await getContract();
+            console.log('Contract instance obtained');
             
             // Make sure the wallet address is properly formatted
             const formattedAddress = ethers.getAddress(walletAddress);
+            console.log('Formatted wallet address:', formattedAddress);
             
-            console.log('Registering organization:', { name, description, formattedAddress });
+            // Check if organization is already registered
+            try {
+                const [existingName, existingDesc, existingAddr, isActive, totalDonations, uniqueDonors] = 
+                    await contract.getOrganizationInfo(formattedAddress);
+                console.log('Organization already registered:', {
+                    name: existingName,
+                    description: existingDesc,
+                    address: existingAddr,
+                    isActive,
+                    totalDonations: ethers.formatEther(totalDonations),
+                    uniqueDonors: Number(uniqueDonors)
+                });
+                return { status: 'already_registered' };
+            } catch (err) {
+                console.log('Organization not registered yet, proceeding with registration');
+            }
             
-            // Create the transaction with explicit value: 0 to ensure no ETH is sent
-            // Use a different approach to avoid high gas fees
+            // Estimate gas for the transaction
+            const gasEstimate = await contract.registerOrganization.estimateGas(
+                name,
+                description,
+                formattedAddress
+            );
+            console.log('Gas estimate:', gasEstimate.toString());
+            
+            // Create the transaction with a higher gas limit
             const tx = await contract.registerOrganization(
                 name,
                 description,
                 formattedAddress,
                 {
-                    gasLimit: 5000000,
-                    value: 0 // Explicitly set value to 0 to ensure no ETH is sent
+                    gasLimit: gasEstimate * BigInt(2), // Use 2x the estimated gas
+                    value: 0
                 }
             );
-            
             console.log('Transaction sent:', tx.hash);
             
             // Wait for the transaction to be mined
             const receipt = await tx.wait();
-            console.log('Transaction confirmed:', receipt);
+            console.log('Transaction mined:', receipt.hash);
             
-            // Update blockchain status in backend
-            const token = localStorage.getItem("welfareToken");
-            if (token) {
-                await fetch("http://localhost:5001/api/welfare/blockchain-status", {
-                    method: "PUT",
-                    headers: {
-                        "Content-Type": "application/json",
-                        Authorization: `Bearer ${token}`,
-                    },
-                    body: JSON.stringify({
-                        isRegistered: true,
-                        isActive: true,
-                    }),
-                });
-            }
-
-            return tx.hash;
+            // Verify registration
+            const [registeredName, registeredDesc, registeredAddr, isActive, totalDonations, uniqueDonors] = 
+                await contract.getOrganizationInfo(formattedAddress);
+            console.log('Organization registration verified:', {
+                name: registeredName,
+                description: registeredDesc,
+                address: registeredAddr,
+                isActive,
+                totalDonations: ethers.formatEther(totalDonations),
+                uniqueDonors: Number(uniqueDonors)
+            });
+            
+            return receipt;
         } catch (err) {
-            console.error("Error registering organization:", err);
-            const errorMessage = err instanceof Error ? err.message : 'Failed to register organization';
-            setError(errorMessage);
-            throw new Error(errorMessage);
+            console.error('Error in registerOrganization:', err);
+            setError(err instanceof Error ? err.message : 'Failed to register organization');
+            throw err;
         } finally {
             setIsLoading(false);
         }

@@ -29,6 +29,7 @@ import {
   Plus,
   ChevronLeft,
   ChevronRight,
+  ClipboardList,
 } from "lucide-react"
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, Legend } from "recharts"
 import ConnectWalletButton from "@/components/ConnectWalletButton"
@@ -43,6 +44,9 @@ import {
 } from "@/components/ui/dialog"
 import { useToast } from "@/components/ui/use-toast"
 import { Toaster } from "@/components/ui/toaster"
+import { Button } from '@/components/ui/button'
+import { ethers } from 'ethers'
+import { toast } from 'sonner'
 
 const COLORS = ["#8b5cf6", "#6366f1", "#ec4899", "#10b981", "#f59e0b", "#ef4444"]
 
@@ -96,6 +100,7 @@ interface SavedWelfare {
   name: string;
   description: string;
   image: string;
+  welfareAddress?: string;
 }
 
 interface Message {
@@ -143,6 +148,23 @@ interface Adoption {
   postedBy: string;
   adoptedBy?: string;
   createdAt: string;
+}
+
+// Add to the interface section
+interface AdoptionRequest {
+  _id: string;
+  adoptionId: string;
+  adoption: {
+    name: string;
+    type: string;
+    breed: string;
+    images: string[];
+  };
+  status: 'pending' | 'approved' | 'rejected' | 'payment pending' | 'under review';
+  reason: string;
+  preferredContact: string;
+  createdAt: string;
+  paymentProof?: string;
 }
 
 export default function DonorDashboard() {
@@ -205,9 +227,30 @@ export default function DonorDashboard() {
     location: "",
     health: "",
     behavior: "",
-    images: [] as string[]
+    images: [] as (string[] | File[])
   })
+  const [adoptionImagePreviews, setAdoptionImagePreviews] = useState<string[]>([]);
   const { toast } = useToast()
+  // 1. Add status filter state
+  const [adoptionStatusFilter, setAdoptionStatusFilter] = useState<string>('available');
+  // 1. Add state for adoption request modal and form fields
+  const [showAdoptionRequestModal, setShowAdoptionRequestModal] = useState(false);
+  const [adoptionRequestAdoptionId, setAdoptionRequestAdoptionId] = useState<string | null>(null);
+  const [adoptionRequestForm, setAdoptionRequestForm] = useState({
+    donorName: userProfile?.name || '',
+    contactNumber: userProfile?.phone || '',
+    email: userProfile?.email || '',
+    reason: '',
+    preferredContact: 'Email',
+  });
+  const [adoptionRequestLoading, setAdoptionRequestLoading] = useState(false);
+  const [adoptionRequestSuccess, setAdoptionRequestSuccess] = useState<string | null>(null);
+  const [adoptionRequestError, setAdoptionRequestError] = useState<string | null>(null);
+  // Add to the state section
+  const [adoptionRequests, setAdoptionRequests] = useState<AdoptionRequest[]>([]);
+  const [loadingRequests, setLoadingRequests] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
+  const USDT_CONTRACT_ADDRESS = process.env.NEXT_PUBLIC_USDT_CONTRACT_ADDRESS || '0x3c44cdddb6a900fa2b585dd299e03d12fa4293bc';
 
   const fetchCases = async () => {
     try {
@@ -384,8 +427,8 @@ export default function DonorDashboard() {
           // Transform the data to match our DonationHistory interface
           const transformedHistory = data.map((donation: any) => ({
             id: donation._id,
-            welfare: donation.welfare.name,
-            case: donation.case.title,
+            welfare: donation.welfare?.name || "Unknown Welfare",
+            case: donation.case?.title || "Unknown Case",
             amount: donation.amount.toString(),
             amountUsd: donation.amountUsd.toString(),
             date: new Date(donation.createdAt).toLocaleDateString(),
@@ -430,7 +473,8 @@ export default function DonorDashboard() {
             description: welfare.description,
             image: welfare.profileImage && welfare.profileImage.startsWith('/') 
               ? `http://localhost:5001${welfare.profileImage}` 
-              : welfare.profileImage || "/images/placeholder.jpg"
+              : welfare.profileImage || "/images/placeholder.jpg",
+            welfareAddress: welfare.welfareAddress
           }))
           
           setSavedWelfares(transformedWelfares)
@@ -448,9 +492,14 @@ export default function DonorDashboard() {
     const fetchMessages = async () => {
       try {
         if (typeof window !== "undefined" && activeTab === "messages") {
+          console.log("Fetching messages for donor...");
           const token = localStorage.getItem("donorToken")
-          if (!token) return
+          if (!token) {
+            console.log("No donor token found");
+            return;
+          }
           
+          console.log("Making API call to fetch messages...");
           const response = await fetch("http://localhost:5001/api/donor/messages", {
             headers: {
               Authorization: `Bearer ${token}`
@@ -458,21 +507,24 @@ export default function DonorDashboard() {
           })
           
           if (!response.ok) {
+            console.error("Failed to fetch messages:", response.status, response.statusText);
             throw new Error("Failed to fetch messages")
           }
           
           const data = await response.json()
+          console.log("Received messages data:", data);
           
           // Transform the data to match our Message interface
           const transformedMessages = data.map((msg: any) => ({
             id: msg._id,
-            welfare: msg.from.name,
+            welfare: msg.from?.name || "Unknown Welfare",
             title: msg.title,
             message: msg.content,
             date: new Date(msg.createdAt).toLocaleDateString(),
-            image: msg.from.profileImage || "/images/placeholder.jpg"
+            image: msg.from?.profileImage || "/images/placeholder.jpg"
           }))
           
+          console.log("Transformed messages:", transformedMessages);
           setMessages(transformedMessages)
         }
       } catch (error) {
@@ -669,9 +721,37 @@ export default function DonorDashboard() {
       }
 
       setShowDonationModal(false);
+      
+      // Wait for a short delay to ensure the backend has processed the donation and created the message
+      await new Promise(resolve => setTimeout(resolve, 1000));
+      
+      // Switch to messages tab
+      setActiveTab("messages");
+      
+      // Fetch messages
+      const messagesResponse = await fetch("http://localhost:5001/api/donor/messages", {
+        headers: {
+          Authorization: `Bearer ${token}`
+        }
+      });
+      
+      if (messagesResponse.ok) {
+        const messagesData = await messagesResponse.json();
+        const transformedMessages = messagesData.map((msg: any) => ({
+          id: msg._id,
+          welfare: msg.from?.name || "Unknown Welfare",
+          title: msg.title,
+          message: msg.content,
+          date: new Date(msg.createdAt).toLocaleDateString(),
+          image: msg.from?.profileImage || "/images/placeholder.jpg"
+        }));
+        setMessages(transformedMessages);
+      }
+      
       // Refresh the cases to show updated amounts
       await fetchCases();
-      // Refresh donation history
+      
+      // Refresh donation history if on donations tab
       if (activeTab === "donations") {
         const historyResponse = await fetch("http://localhost:5001/api/donor/donations/history", {
           headers: {
@@ -683,8 +763,8 @@ export default function DonorDashboard() {
           const historyData = await historyResponse.json()
           const transformedHistory = historyData.map((donation: any) => ({
             id: donation._id,
-            welfare: donation.welfare.name,
-            case: donation.case.title,
+            welfare: donation.welfare?.name || "Unknown Welfare",
+            case: donation.case?.title || "Unknown Case",
             amount: donation.amount.toString(),
             amountUsd: donation.amountUsd.toString(),
             date: new Date(donation.createdAt).toLocaleDateString(),
@@ -961,8 +1041,9 @@ export default function DonorDashboard() {
       console.log('Adoptions fetched successfully:', data);
       setAdoptions(data);
     } catch (error) {
-      console.error('Error fetching adoptions:', error);
-      setError(error.message || 'Failed to load adoptions');
+      const errorMessage = error instanceof Error ? error.message : 'Failed to load adoptions';
+      console.error('Error fetching adoptions:', errorMessage);
+      setError(errorMessage);
     }
   };
 
@@ -1071,6 +1152,242 @@ export default function DonorDashboard() {
       fetchAdoptions();
     }
   }, [activeTab]);
+
+  // 2. Function to open modal and set adoptionId
+  const openAdoptionRequestModal = (adoptionId: string) => {
+    setAdoptionRequestAdoptionId(adoptionId);
+    setAdoptionRequestForm({
+      donorName: userProfile?.name || '',
+      contactNumber: userProfile?.phone || '',
+      email: userProfile?.email || '',
+      reason: '',
+      preferredContact: 'Email',
+    });
+    setAdoptionRequestSuccess(null);
+    setAdoptionRequestError(null);
+    setShowAdoptionRequestModal(true);
+  };
+
+  // 3. Function to submit adoption request
+  const handleSubmitAdoptionRequest = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!adoptionRequestAdoptionId) return;
+    setAdoptionRequestLoading(true);
+    setAdoptionRequestSuccess(null);
+    setAdoptionRequestError(null);
+    try {
+      const token = localStorage.getItem('donorToken');
+      if (!token) throw new Error('No authentication token found');
+      const response = await fetch('http://localhost:5001/api/adoption-request/', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          adoptionId: adoptionRequestAdoptionId,
+          ...adoptionRequestForm,
+        }),
+      });
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.message || 'Failed to submit adoption request');
+      }
+      setAdoptionRequestSuccess('Adoption request submitted successfully!');
+      setTimeout(() => setShowAdoptionRequestModal(false), 1500);
+    } catch (error) {
+      setAdoptionRequestError(error instanceof Error ? error.message : 'Failed to submit adoption request');
+    } finally {
+      setAdoptionRequestLoading(false);
+    }
+  };
+
+  // Add this function to fetch adoption requests
+  const fetchAdoptionRequests = async () => {
+    try {
+      setLoadingRequests(true);
+      const token = localStorage.getItem('donorToken');
+      if (!token) throw new Error('No authentication token found');
+
+      const response = await fetch('http://localhost:5001/api/adoption-request/my', {
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to fetch adoption requests');
+      }
+
+      const requests = await response.json();
+      console.log('Raw adoption requests:', requests);
+
+      // Fetch adoption details for each request
+      const requestsWithAdoptionDetails = await Promise.all(
+        requests.map(async (request: any) => {
+          try {
+            // Ensure adoptionId is a string
+            const adoptionId = typeof request.adoptionId === 'object' ? request.adoptionId._id : request.adoptionId;
+            console.log('Fetching adoption details for ID:', adoptionId);
+
+            if (!adoptionId) {
+              console.warn('No adoptionId found for request:', request);
+              return request;
+            }
+
+            const adoptionResponse = await fetch(`http://localhost:5001/api/adoption/${adoptionId}`, {
+              headers: {
+                'Authorization': `Bearer ${token}`
+              }
+            });
+
+            if (adoptionResponse.ok) {
+              const adoptionData = await adoptionResponse.json();
+              console.log('Fetched adoption data:', adoptionData);
+              return {
+                ...request,
+                adoption: {
+                  name: adoptionData.name,
+                  type: adoptionData.type,
+                  breed: adoptionData.breed,
+                  images: adoptionData.images
+                }
+              };
+            } else {
+              console.error('Failed to fetch adoption details:', await adoptionResponse.text());
+              return request;
+            }
+          } catch (error) {
+            console.error('Error fetching adoption details:', error);
+            return request;
+          }
+        })
+      );
+
+      console.log('Requests with adoption details:', requestsWithAdoptionDetails);
+      setAdoptionRequests(requestsWithAdoptionDetails);
+    } catch (error) {
+      console.error('Error fetching adoption requests:', error);
+      setError(error instanceof Error ? error.message : 'Failed to load adoption requests');
+    } finally {
+      setLoadingRequests(false);
+    }
+  };
+
+  // Add to useEffect for adoption requests
+  useEffect(() => {
+    if (activeTab === 'adoption-requests') {
+      fetchAdoptionRequests();
+    }
+  }, [activeTab]);
+
+  // Add this function to handle payment proof upload
+  const handlePaymentProofUpload = async (requestId: string, file: File) => {
+    try {
+      const token = localStorage.getItem('donorToken');
+      if (!token) throw new Error('No authentication token found');
+
+      const formData = new FormData();
+      formData.append('paymentProof', file);
+
+      const response = await fetch(`http://localhost:5001/api/adoption-request/${requestId}/payment-proof`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`
+        },
+        body: formData
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to upload payment proof');
+      }
+
+      // Refresh requests to show updated status
+      fetchAdoptionRequests();
+      toast({
+        title: "Success",
+        description: "Payment proof uploaded successfully",
+        variant: "default",
+      });
+    } catch (error) {
+      console.error('Error uploading payment proof:', error);
+      toast({
+        title: "Error",
+        description: error instanceof Error ? error.message : "Failed to upload payment proof",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const handlePayment = async (requestId: string) => {
+    try {
+      setIsLoading(true);
+      
+      // Check if MetaMask is installed
+      if (!window.ethereum) {
+        throw new Error('Please install MetaMask to make payments');
+      }
+
+      // Request account access
+      const accounts = await window.ethereum.request({ method: 'eth_requestAccounts' });
+      const senderAddress = accounts[0];
+
+      // Create a provider and signer
+      const provider = new ethers.BrowserProvider(window.ethereum);
+      const signer = await provider.getSigner();
+
+      // Check user's balance
+      const balance = await provider.getBalance(senderAddress);
+      const balanceInEth = ethers.formatEther(balance);
+      
+      // Convert 30 USDT to ETH (assuming 1 USDT = 0.0005 ETH)
+      const requiredAmount = ethers.parseEther('0.015'); // 30 * 0.0005 ETH
+
+      if (balance < requiredAmount) {
+        throw new Error('Insufficient balance. Please ensure you have enough ETH to cover the payment.');
+      }
+
+      // Send the transaction
+      const tx = await signer.sendTransaction({
+        to: '0x14dC79964da2C08b23698B3D3cc7Ca32193d9955', // Welfare organization's wallet
+        value: requiredAmount
+      });
+
+      // Send payment details to backend
+      const response = await fetch(`http://localhost:5001/api/adoption-request/${requestId}/payment`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${localStorage.getItem('donorToken')}`
+        },
+        body: JSON.stringify({
+          fromAddress: senderAddress,
+          amount: 30 // Amount in USDT
+        })
+      });
+
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.message || 'Failed to process payment');
+      }
+
+      // Refresh the requests list
+      await fetchAdoptionRequests();
+      
+      toast({
+        title: 'Success',
+        description: 'Payment successful!'
+      });
+    } catch (error: unknown) {
+      console.error('Payment error:', error);
+      toast({
+        title: 'Error',
+        description: error instanceof Error ? error.message : 'Failed to process payment'
+      });
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
@@ -1186,6 +1503,15 @@ export default function DonorDashboard() {
             >
               <Heart className="h-5 w-5" />
               {isSidebarOpen && <span className="ml-3">Adoptions</span>}
+            </button>
+            <button
+              onClick={() => setActiveTab("adoption-requests")}
+              className={`flex items-center w-full p-2 rounded-md ${
+                activeTab === "adoption-requests" ? "bg-purple-600 text-white" : "hover:bg-gray-700 text-gray-300"
+              }`}
+            >
+              <ClipboardList className="h-5 w-5" />
+              {isSidebarOpen && <span className="ml-3">My Requests</span>}
             </button>
             <button
               onClick={handleLogout}
@@ -2143,14 +2469,26 @@ export default function DonorDashboard() {
         {/* Adoptions Tab */}
         {activeTab === "adoptions" && (
                   <div className="space-y-6">
-            <div className="flex justify-between items-center">
+            <div className="flex justify-between items-center mb-4">
               <h2 className="text-xl font-semibold text-white">Adoption Management</h2>
-              <button
-                onClick={() => setShowAddAdoption(true)}
-                className="bg-purple-600 text-white px-4 py-2 rounded-md flex items-center hover:bg-purple-700 transition-colors"
-              >
-                <Plus className="h-4 w-4 mr-2" /> Post New Adoption
-              </button>
+              <div className="flex items-center gap-4">
+                <select
+                  value={adoptionStatusFilter}
+                  onChange={e => setAdoptionStatusFilter(e.target.value)}
+                  className="bg-gray-700 text-white rounded px-3 py-1 border border-gray-600 focus:outline-none"
+                >
+                  <option value="all">All</option>
+                  <option value="available">Available</option>
+                  <option value="reserved">Reserved</option>
+                  <option value="adopted">Adopted</option>
+                </select>
+                <button
+                  onClick={() => setShowAddAdoption(true)}
+                  className="bg-purple-600 text-white px-4 py-2 rounded-md flex items-center hover:bg-purple-700 transition-colors"
+                >
+                  <Plus className="h-4 w-4 mr-2" /> Post New Adoption
+                </button>
+              </div>
             </div>
 
             {/* Add Adoption Modal */}
@@ -2337,9 +2675,11 @@ export default function DonorDashboard() {
             )}
 
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-              {adoptions.length > 0 ? adoptions.map((adoption) => (
+              {adoptions.filter(a => adoptionStatusFilter === 'all' ? true : a.status === adoptionStatusFilter).length > 0 ? adoptions.filter(a => adoptionStatusFilter === 'all' ? true : a.status === adoptionStatusFilter).map((adoption) => (
                 <div key={adoption._id} className="bg-gray-800 rounded-lg shadow overflow-hidden border border-gray-700">
                   <div className="h-48 bg-gray-700 relative">
+                    {/* 3. Status badge */}
+                    <span className={`absolute top-2 left-2 px-3 py-1 text-xs font-bold rounded-full ${adoption.status === 'available' ? 'bg-green-600 text-white' : adoption.status === 'reserved' ? 'bg-yellow-500 text-gray-900' : 'bg-gray-500 text-white'}`}>{adoption.status.charAt(0).toUpperCase() + adoption.status.slice(1)}</span>
                     <img
                       src={`http://localhost:5001${adoption.images[0].startsWith('/') ? '' : '/'}${adoption.images[0]}`}
                       alt={adoption.name}
@@ -2351,21 +2691,24 @@ export default function DonorDashboard() {
                     <p className="text-purple-400 text-sm mb-3">
                       {adoption.type} • {adoption.breed} • {adoption.age}
                     </p>
-                    
                     <div className="space-y-2 mb-4">
                       <div className="flex items-center text-gray-300 text-sm">
                         <MapPin className="h-4 w-4 mr-2 text-gray-500" />
                         <span>{adoption.location}</span>
-                        </div>
+                      </div>
                       <div className="flex items-center text-gray-300 text-sm">
                         <User className="h-4 w-4 mr-2 text-gray-500" />
-                        <span>Posted by {adoption.postedBy}</span>
+                        {/* 4. Welfare org name clickable */}
+                        {typeof adoption.postedBy === 'object' && adoption.postedBy !== null ? (
+                          <Link href={`/welfare/${(adoption.postedBy as any)._id}`} className="text-purple-400 hover:underline">{(adoption.postedBy as any).name}</Link>
+                        ) : (
+                          <span>{adoption.postedBy}</span>
+                        )}
                       </div>
                     </div>
-                    
                     <div className="flex justify-end space-x-2">
                       <button 
-                        onClick={() => handleAdopt(adoption._id)}
+                        onClick={() => openAdoptionRequestModal(adoption._id)}
                         className="px-3 py-1 bg-purple-600 text-white rounded-md hover:bg-purple-700 text-sm"
                       >
                         Adopt
@@ -2391,15 +2734,99 @@ export default function DonorDashboard() {
             </div>
             </div>
           )}
+
+          {/* Adoption Requests Tab */}
+          {activeTab === "adoption-requests" && (
+            <div className="space-y-6">
+              <div className="flex justify-between items-center mb-4">
+                <h2 className="text-xl font-semibold text-white">My Adoption Requests</h2>
+              </div>
+
+              {loadingRequests ? (
+                <div className="flex justify-center items-center h-64">
+                  <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-purple-500"></div>
+                </div>
+              ) : adoptionRequests.length > 0 ? (
+                <div className="grid grid-cols-1 gap-6">
+                  {adoptionRequests.map((request) => (
+                    <div key={request._id} className="bg-gray-800 rounded-lg shadow overflow-hidden border border-gray-700">
+                      <div className="p-5">
+                        <div className="flex justify-between items-start mb-4">
+                          <div>
+                            <h3 className="font-semibold text-lg text-white mb-1">
+                              {request.adoption?.name || 'Unknown Animal'}
+                            </h3>
+                            <p className="text-purple-400 text-sm">
+                              {request.adoption?.type || 'Unknown'} • {request.adoption?.breed || 'Unknown'}
+                            </p>
+                          </div>
+                          <span className={`px-3 py-1 text-xs font-bold rounded-full ${
+                            request.status === 'pending' ? 'bg-yellow-500 text-gray-900' :
+                            request.status === 'approved' ? 'bg-green-600 text-white' :
+                            'bg-red-600 text-white'
+                          }`}>
+                            {request.status.charAt(0).toUpperCase() + request.status.slice(1)}
+                          </span>
+                        </div>
+                        
+                        <div className="space-y-3">
+                          <div>
+                            <p className="text-gray-400 text-sm">Reason for Adoption</p>
+                            <p className="text-gray-300">{request.reason}</p>
+                          </div>
+                          <div>
+                            <p className="text-gray-400 text-sm">Preferred Contact Method</p>
+                            <p className="text-gray-300">{request.preferredContact}</p>
+                          </div>
+                          <div>
+                            <p className="text-gray-400 text-sm">Requested On</p>
+                            <p className="text-gray-300">{new Date(request.createdAt).toLocaleDateString()}</p>
+                          </div>
+                        </div>
+
+                        {request.status === 'approved' && (
+                          <div className="flex justify-end mt-4">
+                            <Button
+                              onClick={() => handlePayment(request._id)}
+                              disabled={isLoading}
+                              className="mt-4"
+                            >
+                              {isLoading ? 'Processing Payment...' : 'Pay Adoption Fee (30 USDT)'}
+                            </Button>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="bg-gray-800 rounded-lg shadow p-8 text-center border border-gray-700">
+                  <ClipboardList className="h-12 w-12 text-gray-500 mx-auto mb-4" />
+                  <p className="text-gray-300 mb-2">No adoption requests yet.</p>
+                  <p className="text-gray-400 mb-6 text-sm">Submit your first adoption request by clicking the Adopt button on any available animal.</p>
+                  <button
+                    onClick={() => setActiveTab("adoptions")}
+                    className="bg-purple-600 text-white px-4 py-2 rounded-md flex items-center hover:bg-purple-700 transition-colors mx-auto"
+                  >
+                    <PawPrint className="h-4 w-4 mr-2" /> Browse Adoptions
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
       </div>
 
       {/* Donation Modal */}
       {showDonationModal && selectedCase && (
         <DonationModal
           caseData={selectedCase}
-          walletAddress={walletAddress}
+          walletAddress={walletAddress || undefined}
           onClose={() => setShowDonationModal(false)}
-          onDonationComplete={handleDonationComplete}
+          onDonationComplete={(data) => {
+            if (data.txHash) {
+              handleDonationComplete({ amount: data.amount, txHash: data.txHash });
+            }
+          }}
           fetchCases={fetchCases}
         />
       )}
@@ -2513,7 +2940,7 @@ export default function DonorDashboard() {
                                   : "/images/placeholder.jpg",
                                 welfare: emergencyAssignedWelfare.name,
                                 welfareId: emergencyAssignedWelfare.id,  // Added this field
-                                welfareAddress: emergencyAssignedWelfare.welfareAddress,
+                                welfareAddress: emergencyAssignedWelfare.welfareAddress || null,
                                 category: "Emergency",
                                 status: "Active",
                                 createdAt: selectedEmergency.createdAt
@@ -2558,6 +2985,96 @@ export default function DonorDashboard() {
           )}
         </DialogContent>
       </Dialog>
+
+      {/* Adoption Request Modal */}
+      {showAdoptionRequestModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-30 p-4 overflow-y-auto">
+          <div className="bg-gray-800 rounded-lg shadow-lg p-6 max-w-md w-full border border-gray-700 my-8">
+            <div className="flex justify-between items-center mb-4">
+              <h3 className="text-lg font-medium text-white">Adoption Request</h3>
+              <button
+                onClick={() => setShowAdoptionRequestModal(false)}
+                className="text-gray-400 hover:text-gray-300"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+            <form onSubmit={handleSubmitAdoptionRequest} className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-300 mb-1">Name</label>
+                <input
+                  type="text"
+                  value={adoptionRequestForm.donorName}
+                  onChange={e => setAdoptionRequestForm(f => ({ ...f, donorName: e.target.value }))}
+                  className="w-full p-2 bg-gray-700 border border-gray-600 rounded-md text-white"
+                  required
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-300 mb-1">Contact Number</label>
+                <input
+                  type="text"
+                  value={adoptionRequestForm.contactNumber}
+                  onChange={e => setAdoptionRequestForm(f => ({ ...f, contactNumber: e.target.value }))}
+                  className="w-full p-2 bg-gray-700 border border-gray-600 rounded-md text-white"
+                  required
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-300 mb-1">Email</label>
+                <input
+                  type="email"
+                  value={adoptionRequestForm.email}
+                  onChange={e => setAdoptionRequestForm(f => ({ ...f, email: e.target.value }))}
+                  className="w-full p-2 bg-gray-700 border border-gray-600 rounded-md text-white"
+                  required
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-300 mb-1">Reason for Adoption</label>
+                <textarea
+                  value={adoptionRequestForm.reason}
+                  onChange={e => setAdoptionRequestForm(f => ({ ...f, reason: e.target.value }))}
+                  className="w-full p-2 bg-gray-700 border border-gray-600 rounded-md text-white"
+                  rows={3}
+                  required
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-300 mb-1">Preferred Contact Method</label>
+                <select
+                  value={adoptionRequestForm.preferredContact}
+                  onChange={e => setAdoptionRequestForm(f => ({ ...f, preferredContact: e.target.value }))}
+                  className="w-full p-2 bg-gray-700 border border-gray-600 rounded-md text-white"
+                  required
+                >
+                  <option value="Email">Email</option>
+                  <option value="Phone">Phone</option>
+                </select>
+              </div>
+              {adoptionRequestError && <div className="text-red-400 text-sm">{adoptionRequestError}</div>}
+              {adoptionRequestSuccess && <div className="text-green-400 text-sm">{adoptionRequestSuccess}</div>}
+              <div className="flex justify-end space-x-3 mt-4">
+                <button
+                  type="button"
+                  onClick={() => setShowAdoptionRequestModal(false)}
+                  className="px-4 py-2 bg-gray-700 text-white rounded-md hover:bg-gray-600"
+                  disabled={adoptionRequestLoading}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="px-4 py-2 bg-purple-600 text-white rounded-md hover:bg-purple-700"
+                  disabled={adoptionRequestLoading}
+                >
+                  {adoptionRequestLoading ? 'Submitting...' : 'Submit Request'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

@@ -376,6 +376,7 @@ router.put("/profile/update", verifyWelfareToken, async (req, res) => {
           phone: updates.phone,
           address: updates.address,
           bio: updates.bio,
+          blockchainAddress: updates.blockchainAddress,
           "socialLinks.facebook": updates.socialLinks?.facebook || "",
           "socialLinks.instagram": updates.socialLinks?.instagram || "",
         },
@@ -929,20 +930,27 @@ router.get("/donations", verifyWelfareToken, async (req, res) => {
 // Function to send a thank you message to a donor
 const sendThankYouMessage = async (welfareId, donorId, caseId, donationAmount) => {
   try {
+    console.log("Creating thank you message with params:", { welfareId, donorId, caseId, donationAmount });
+    
     // Find the case details
+    console.log("Finding case details...");
     const caseDetails = await Case.findById(caseId);
     if (!caseDetails) {
-      console.error("Case not found for thank you message");
+      console.error("Case not found for thank you message:", caseId);
       return false;
     }
+    console.log("Found case details:", caseDetails);
 
     // Find the welfare organization details
+    console.log("Finding welfare organization details...");
     const welfare = await WelfareOrganization.findById(welfareId);
     if (!welfare) {
-      console.error("Welfare organization not found for thank you message");
+      console.error("Welfare organization not found for thank you message:", welfareId);
       return false;
     }
+    console.log("Found welfare details:", welfare);
 
+    console.log("Creating message object...");
     // Create a thank you message
     const message = new Message({
       from: welfareId,
@@ -953,26 +961,97 @@ const sendThankYouMessage = async (welfareId, donorId, caseId, donationAmount) =
       isRead: false
     });
 
-    await message.save();
+    console.log("Message object created:", message);
+    console.log("Saving message...");
+    const savedMessage = await message.save();
+    console.log("Thank you message created successfully:", savedMessage._id);
     return true;
   } catch (error) {
     console.error("Error sending thank you message:", error);
+    console.error("Error details:", {
+      message: error.message,
+      stack: error.stack,
+      name: error.name
+    });
     return false;
   }
 };
 
 // New route - Process a new donation and send a thank you message
-router.post("/process-donation", verifyWelfareToken, async (req, res) => {
+router.post("/process-donation", async (req, res) => {
   try {
-    const { caseId, donorId, amount, txHash, amountUsd } = req.body;
-    const welfareId = req.user.id;
+    console.log("Received donation processing request:", req.body);
+    console.log("Request headers:", req.headers);
 
+    // Check if this is an internal call
+    const isInternalCall = req.headers['x-internal-call'] === 'true';
+    console.log("Is internal call:", isInternalCall);
+    
+    // If not internal call, verify welfare token
+    if (!isInternalCall) {
+      console.log("Verifying welfare token...");
+      const token = req.header("Authorization")?.split(" ")[1];
+      if (!token) {
+        console.error("No token provided");
+        return res.status(401).json({ message: "Unauthorized. No token provided." });
+      }
+      
+      const decoded = jwt.verify(token, process.env.JWT_SECRET);
+      const welfare = await WelfareOrganization.findById(decoded.id);
+      if (!welfare) {
+        console.error("Welfare not found:", decoded.id);
+        return res.status(404).json({ message: "Welfare not found" });
+      }
+      req.user = { id: welfare._id };
+      console.log("Welfare token verified:", req.user);
+    }
+
+    const { caseId, donorId, amount, txHash, amountUsd, blockchainData } = req.body;
+    const welfareId = isInternalCall ? req.body.welfareId : req.user.id;
+
+    console.log("Processing donation with data:", {
+      caseId,
+      donorId,
+      amount,
+      txHash,
+      amountUsd,
+      welfareId,
+      blockchainData
+    });
+
+    console.log("Verifying case...");
     // Verify the case exists and belongs to this welfare
     const caseDetails = await Case.findOne({ _id: caseId, createdBy: welfareId });
     if (!caseDetails) {
+      console.error("Case not found or doesn't belong to welfare:", { caseId, welfareId });
       return res.status(404).json({ message: "Case not found or doesn't belong to this welfare organization" });
     }
+    console.log("Case verified:", caseDetails);
 
+    // Check if a donation with this transaction hash already exists
+    console.log("Checking for existing donation with txHash:", txHash);
+    const existingDonation = await Donation.findOne({ txHash });
+    if (existingDonation) {
+      console.log("Donation already exists:", existingDonation);
+      // Update the case's amountRaised if needed
+      await Case.findByIdAndUpdate(caseId, {
+        $inc: { amountRaised: parseFloat(amountUsd) }
+      });
+      console.log("Case amount raised updated");
+
+      // Send a thank you message if not already sent
+      console.log("Sending thank you message...");
+      const messageSent = await sendThankYouMessage(welfareId, donorId, caseId, amount);
+      console.log("Thank you message sent:", messageSent);
+
+      return res.status(200).json({ 
+        message: "Donation already processed", 
+        donation: existingDonation,
+        thankYouMessageSent: messageSent
+      });
+    }
+
+    console.log("Creating donation record...");
     // Create a new donation record
     const donation = new Donation({
       donor: donorId,
@@ -981,18 +1060,29 @@ router.post("/process-donation", verifyWelfareToken, async (req, res) => {
       amount,
       amountUsd,
       txHash,
-      status: "Confirmed"
+      status: "Confirmed",
+      blockchainData: blockchainData || {
+        donorAddress: req.body.donorAddress || "0x0000000000000000000000000000000000000000",
+        organizationAddress: caseDetails.welfareAddress || "0x0000000000000000000000000000000000000000",
+        timestamp: Math.floor(Date.now() / 1000)
+      }
     });
 
+    console.log("Saving donation record...");
     await donation.save();
+    console.log("Donation record saved:", donation);
 
+    console.log("Updating case amount raised...");
     // Update the case's amountRaised
     await Case.findByIdAndUpdate(caseId, {
       $inc: { amountRaised: parseFloat(amountUsd) }
     });
+    console.log("Case amount raised updated");
 
+    console.log("Sending thank you message...");
     // Send a thank you message
     const messageSent = await sendThankYouMessage(welfareId, donorId, caseId, amount);
+    console.log("Thank you message sent:", messageSent);
 
     res.status(201).json({ 
       message: "Donation processed successfully", 
@@ -1001,6 +1091,11 @@ router.post("/process-donation", verifyWelfareToken, async (req, res) => {
     });
   } catch (error) {
     console.error("Error processing donation:", error);
+    console.error("Error details:", {
+      message: error.message,
+      stack: error.stack,
+      name: error.name
+    });
     res.status(500).json({ message: "Server error" });
   }
 });
@@ -1092,6 +1187,29 @@ router.put("/blockchain-address", verifyWelfareToken, async (req, res) => {
   } catch (error) {
     console.error("Error updating blockchain address:", error);
     res.status(500).json({ message: "Server error", error: error.message });
+  }
+});
+
+// Assign a doctor to a case (Welfare only)
+router.put("/cases/:caseId/assign-doctor", verifyWelfareToken, async (req, res) => {
+  try {
+    const { caseId } = req.params;
+    const { doctorId } = req.body;
+
+    // Find the case and ensure it belongs to this welfare org
+    const existingCase = await Case.findOne({ _id: caseId, createdBy: req.user.id });
+    if (!existingCase) {
+      return res.status(404).json({ message: "Case not found or you don't have permission to update it" });
+    }
+
+    // Assign the doctor
+    existingCase.assignedDoctor = doctorId;
+    await existingCase.save();
+
+    res.status(200).json({ message: "Doctor assigned to case successfully", case: existingCase });
+  } catch (error) {
+    console.error("Error assigning doctor to case:", error);
+    res.status(500).json({ message: "Internal server error", error: error.message });
   }
 });
 

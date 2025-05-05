@@ -1,0 +1,1 @@
+const mongoose = require("mongoose"); const Message = require("./models/Message"); mongoose.connect("mongodb://localhost:27017/cryptopaws").then(() => Message.find().then(messages => { console.log(messages); process.exit(); })).catch(err => { console.error(err); process.exit(1); });

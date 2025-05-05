@@ -24,15 +24,17 @@ interface DonationModalProps {
     amountRaised: string;
     imageUrl: string;
     welfare: string;
+    welfareId: string;  // ✅ added
     welfareAddress: string | null;
     category: string;
     status: string;
     createdAt: string;
   };
   walletAddress?: string;
-  onDonationComplete?: (data: { amount: string; txHash?: string }) => void;
+  onDonationComplete?: (data: { amount: string; txHash?: string; caseData: DonationModalProps["caseData"] }) => void;  // ✅ updated
   fetchCases?: () => Promise<void>;
 }
+
 
 export default function DonationModal({
   isOpen = true,
@@ -93,12 +95,7 @@ export default function DonationModal({
       await tx.wait()
 
       // Call the completion callback if provided
-      if (onDonationComplete) {
-        onDonationComplete({
-          amount: amount,
-          txHash: tx.hash
-        })
-      }
+    
 
       // Refresh cases after successful donation
       if (fetchCases) {
@@ -160,8 +157,10 @@ export default function DonationModal({
                   <span className="text-sm font-medium">Welfare Address:</span>
                   <button
                     onClick={() => {
-                      navigator.clipboard.writeText(caseData.welfareAddress);
-                      // You could add a toast notification here
+                      if (caseData.welfareAddress) {
+                        navigator.clipboard.writeText(caseData.welfareAddress);
+                        // You could add a toast notification here
+                      }
                     }}
                     className="text-xs text-primary hover:text-primary/80 transition-colors"
                   >

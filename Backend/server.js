@@ -8,7 +8,7 @@ const dotenv = require('dotenv');
 
 const fs = require('fs');
 require("dotenv").config(); 
-
+console.log("JWT_SECRET:", process.env.JWT_SECRET);
 
 const emergencyRoutes = require("./routes/emergency");
 const profileRouter = require("./routes/profile");
@@ -38,7 +38,7 @@ const app = express();
 // Middleware
 app.use(cors({
     origin: ["http://localhost:3000", "http://localhost:3001"],
-    methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
     allowedHeaders: ["Content-Type", "Authorization"],
     credentials: true
 }));
@@ -46,6 +46,7 @@ app.use(cors({
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use("/uploads", express.static("uploads"));
+app.use("/cases", express.static("uploads/cases"));
 
 console.log("Connecting to MongoDB...");
 
@@ -80,6 +81,12 @@ app.use("/api/success-stories", successStoryRoutes);
 app.use("/api/adoption", adoptionRoutes);
 app.use('/api/doctor', doctorRoutes);
 
+console.log('Mounting adoption request routes...');
+app.use("/api/adoption-request", (req, res, next) => {
+  console.log(`Adoption Request API: ${req.method} ${req.url}`);
+  next();
+}, require("./routes/adoptionRequestRoutes"));
+console.log('Adoption request routes mounted');
 
 // Simple health check endpoint
 app.get("/api/health-check", (req, res) => {

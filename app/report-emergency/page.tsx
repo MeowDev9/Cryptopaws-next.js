@@ -5,11 +5,24 @@ import type React from "react"
 import { useState, useEffect } from "react"
 import { useRouter } from "next/navigation"
 import Image from "next/image"
-import { AlertTriangle, MapPin, Phone, Camera, Send, CheckCircle, Loader2, X, Upload, AlertCircle } from "lucide-react"
+import {
+  AlertTriangle,
+  MapPin,
+  Phone,
+  Camera,
+  Send,
+  CheckCircle,
+  Loader2,
+  X,
+  Upload,
+  AlertCircle,
+  Heart,
+  Shield,
+  PawPrintIcon as Paw,
+} from "lucide-react"
 import Navbar from "@/components/Navbar"
 import Footer from "@/components/Footer"
 import ConnectWalletButton from "@/components/ConnectWalletButton"
-
 
 export default function ReportEmergency() {
   const router = useRouter()
@@ -46,7 +59,7 @@ export default function ReportEmergency() {
     const { latitude, longitude } = position.coords
 
     // Using the provided Google API key
-    const apiKey = 'AIzaSyBPjBHXmDnGvJULgTBQFScAlMCqGZUe16g'
+    const apiKey = "AIzaSyBPjBHXmDnGvJULgTBQFScAlMCqGZUe16g"
     const url = `https://maps.googleapis.com/maps/api/geocode/json?latlng=${latitude},${longitude}&key=${apiKey}`
 
     fetch(url)
@@ -130,8 +143,14 @@ export default function ReportEmergency() {
 
     try {
       // Validate required fields
-      if (!formData.name || !formData.phone || !formData.location || 
-          !formData.description || !formData.animalType || !formData.condition) {
+      if (
+        !formData.name ||
+        !formData.phone ||
+        !formData.location ||
+        !formData.description ||
+        !formData.animalType ||
+        !formData.condition
+      ) {
         setError("Please fill in all required fields")
         setIsSubmitting(false)
         return
@@ -156,8 +175,8 @@ export default function ReportEmergency() {
 
       // Send the form data to the backend API
       const response = await fetch("http://localhost:5001/api/emergency", {
-        method: 'POST',
-        body: form
+        method: "POST",
+        body: form,
       })
 
       if (!response.ok) {
@@ -199,64 +218,85 @@ export default function ReportEmergency() {
   return (
     <>
       <Navbar />
-      <div className="min-h-screen bg-gradient-to-b from-gray-900 to-gray-800 py-12 text-white">
-        <div className="max-w-4xl mx-auto px-4">
-          <div className="bg-gray-800 border border-purple-500/30 rounded-xl shadow-lg overflow-hidden backdrop-blur-sm">
-            <div className="bg-gradient-to-r from-purple-700 to-purple-500 p-6 text-white">
-              <div className="flex items-center">
-                <AlertTriangle size={32} className="mr-4" />
-                <div>
-                  <h1 className="text-2xl font-bold">Report an Animal Emergency</h1>
-                  <p className="text-white/80">
-                    Use this form to report animals in distress or danger that need immediate help
-                  </p>
-                </div>
-              </div>
-            </div>
+      <div className="relative min-h-screen py-16 overflow-hidden">
+        {/* Background with subtle pattern */}
+        <div className="absolute inset-0 z-[-1]">
+          <div className="absolute inset-0 bg-gradient-to-b from-purple-950 via-slate-900 to-slate-950"></div>
+          <div
+            className="absolute inset-0 opacity-5"
+            style={{
+              backgroundImage:
+                "url(\"data:image/svg+xml,%3Csvg width='60' height='60' viewBox='0 0 60 60' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' fillRule='evenodd'%3E%3Cg fill='%239C92AC' fillOpacity='0.4'%3E%3Cpath d='M36 34v-4h-2v4h-4v2h4v4h2v-4h4v-2h-4zm0-30V0h-2v4h-4v2h4v4h2V6h4V4h-4zM6 34v-4H4v4H0v2h4v4h2v-4h4v-2H6zM6 4V0H4v4H0v2h4v4h2V6h4V4H6z'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E\")",
+            }}
+          ></div>
+        </div>
 
+        {/* Decorative elements */}
+        <div className="absolute top-20 left-10 w-64 h-64 bg-purple-600/10 rounded-full blur-3xl"></div>
+        <div className="absolute bottom-20 right-10 w-64 h-64 bg-pink-600/10 rounded-full blur-3xl"></div>
+
+        <div className="max-w-4xl mx-auto px-4 relative z-10">
+          {/* Page Title */}
+          <div className="text-center mb-10">
+            <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-red-600/20 mb-4">
+              <AlertTriangle size={32} className="text-red-500" />
+            </div>
+            <h1 className="text-4xl font-bold text-white mb-2">Report an Animal Emergency</h1>
+            <p className="text-gray-300 max-w-2xl mx-auto">
+              Help us rescue animals in distress by providing detailed information about the emergency situation
+            </p>
+          </div>
+
+          {/* Main Content */}
+          <div className="bg-slate-900/80 backdrop-blur-md border border-purple-500/20 rounded-2xl shadow-2xl overflow-hidden">
             {success ? (
-              <div className="p-8 text-center">
-                <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
-                  <CheckCircle size={32} className="text-green-600" />
+              <div className="p-12 text-center">
+                <div className="w-20 h-20 bg-green-600/20 rounded-full flex items-center justify-center mx-auto mb-6">
+                  <CheckCircle size={40} className="text-green-500" />
                 </div>
-                <h2 className="text-2xl font-bold text-white mb-2">Emergency Reported!</h2>
-                <p className="text-gray-300 mb-6">
+                <h2 className="text-3xl font-bold text-white mb-4">Emergency Reported!</h2>
+                <p className="text-gray-300 mb-8 max-w-lg mx-auto">
                   Thank you for reporting this emergency. Our team has been notified and will respond as quickly as
-                  possible.
+                  possible. You'll receive updates on the status of your report.
                 </p>
                 <div className="flex flex-wrap justify-center gap-4">
                   <button
                     onClick={() => setSuccess(false)}
-                    className="px-6 py-2 bg-purple-600 text-white rounded-md hover:bg-purple-700 transition-colors"
+                    className="px-6 py-3 bg-purple-600 text-white rounded-full hover:bg-purple-700 transition-colors shadow-lg shadow-purple-600/20 flex items-center gap-2"
                   >
+                    <AlertTriangle size={18} />
                     Report Another Emergency
                   </button>
                   <button
                     onClick={() => router.push("/donor/dashboard")}
-                    className="px-6 py-2 border border-purple-500 text-white rounded-md hover:bg-purple-700/20 transition-colors"
+                    className="px-6 py-3 border border-purple-500 text-white rounded-full hover:bg-purple-700/20 transition-colors flex items-center gap-2"
                   >
+                    <Heart size={18} />
                     Return to Dashboard
                   </button>
                 </div>
               </div>
             ) : (
-              <form onSubmit={handleSubmit} className="p-6 space-y-6">
+              <form onSubmit={handleSubmit} className="p-8 space-y-8">
                 {error && (
-                  <div className="p-4 bg-red-900/50 border border-red-500 text-red-200 rounded-md flex items-start">
-                    <AlertCircle size={20} className="mr-2 mt-0.5 flex-shrink-0" />
+                  <div className="p-4 bg-red-900/30 border border-red-500/50 text-red-200 rounded-xl flex items-start animate-pulse">
+                    <AlertCircle size={20} className="mr-3 mt-0.5 flex-shrink-0" />
                     <p>{error}</p>
                   </div>
                 )}
 
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-300 mb-1">Animal Type</label>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                  <div className="space-y-2">
+                    <label className="block text-sm font-medium text-gray-300 mb-1 flex items-center">
+                      <Paw size={16} className="mr-2 text-purple-400" />
+                      Animal Type
+                    </label>
                     <select
                       name="animalType"
                       value={formData.animalType}
                       onChange={handleChange}
                       required
-                      className="w-full p-3 bg-gray-700 border border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-purple-500 text-white"
+                      className="w-full p-3 bg-slate-800/80 border border-purple-500/30 rounded-xl focus:outline-none focus:ring-2 focus:ring-purple-500 text-white transition-all"
                     >
                       <option value="">Select animal type</option>
                       <option value="dog">Dog</option>
@@ -267,14 +307,17 @@ export default function ReportEmergency() {
                     </select>
                   </div>
 
-                  <div>
-                    <label className="block text-sm font-medium text-gray-300 mb-1">Condition</label>
+                  <div className="space-y-2">
+                    <label className="block text-sm font-medium text-gray-300 mb-1 flex items-center">
+                      <Shield size={16} className="mr-2 text-purple-400" />
+                      Condition
+                    </label>
                     <select
                       name="condition"
                       value={formData.condition}
                       onChange={handleChange}
                       required
-                      className="w-full p-3 bg-gray-700 border border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-purple-500 text-white"
+                      className="w-full p-3 bg-slate-800/80 border border-purple-500/30 rounded-xl focus:outline-none focus:ring-2 focus:ring-purple-500 text-white transition-all"
                     >
                       <option value="">Select condition</option>
                       <option value="injured">Injured</option>
@@ -286,12 +329,10 @@ export default function ReportEmergency() {
                   </div>
                 </div>
 
-                <div>
-                  <label className="block text-sm font-medium text-gray-300 mb-1">
-                    <div className="flex items-center">
-                      <MapPin size={16} className="mr-1" />
-                      Location
-                    </div>
+                <div className="space-y-2">
+                  <label className="block text-sm font-medium text-gray-300 mb-1 flex items-center">
+                    <MapPin size={16} className="mr-2 text-purple-400" />
+                    Location
                   </label>
                   <div className="relative">
                     <input
@@ -303,7 +344,7 @@ export default function ReportEmergency() {
                         isLocationLoading ? "Fetching your location..." : "Enter address or describe the location"
                       }
                       required
-                      className="w-full p-3 bg-gray-700 border border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-purple-500 text-white pr-10"
+                      className="w-full p-3 bg-slate-800/80 border border-purple-500/30 rounded-xl focus:outline-none focus:ring-2 focus:ring-purple-500 text-white pr-10 transition-all"
                     />
                     {isLocationLoading && (
                       <div className="absolute right-3 top-1/2 -translate-y-1/2">
@@ -311,36 +352,39 @@ export default function ReportEmergency() {
                       </div>
                     )}
                   </div>
-                  <p className="text-xs text-gray-400 mt-1">
+                  <p className="text-xs text-gray-400 mt-1 ml-1">
                     We use your location to dispatch help quickly. You can edit it if needed.
                   </p>
                 </div>
 
-                <div>
-                  <label className="block text-sm font-medium text-gray-300 mb-1">Description</label>
+                <div className="space-y-2">
+                  <label className="block text-sm font-medium text-gray-300 mb-1 flex items-center">
+                    <AlertCircle size={16} className="mr-2 text-purple-400" />
+                    Description
+                  </label>
                   <textarea
                     name="description"
                     value={formData.description}
                     onChange={handleChange}
-                    placeholder="Describe the emergency situation and the animal's condition"
+                    placeholder="Describe the emergency situation and the animal's condition in detail"
                     rows={4}
                     required
-                    className="w-full p-3 bg-gray-700 border border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-purple-500 text-white"
+                    className="w-full p-3 bg-slate-800/80 border border-purple-500/30 rounded-xl focus:outline-none focus:ring-2 focus:ring-purple-500 text-white transition-all"
                   ></textarea>
                 </div>
 
-                <div>
-                  <label className="block text-sm font-medium text-gray-300 mb-1">
-                    <div className="flex items-center">
-                      <Camera size={16} className="mr-1" />
-                      Photos (if available)
-                    </div>
+                <div className="space-y-3">
+                  <label className="block text-sm font-medium text-gray-300 mb-1 flex items-center">
+                    <Camera size={16} className="mr-2 text-purple-400" />
+                    Photos (if available)
                   </label>
                   <div className="mt-1">
-                    <label className="flex flex-col items-center justify-center w-full h-32 border-2 border-dashed border-gray-600 rounded-lg cursor-pointer bg-gray-700/50 hover:bg-gray-700 transition-colors">
+                    <label className="flex flex-col items-center justify-center w-full h-36 border-2 border-dashed border-purple-500/30 rounded-xl cursor-pointer bg-slate-800/50 hover:bg-slate-800 transition-colors group">
                       <div className="flex flex-col items-center justify-center pt-5 pb-6">
-                        <Upload size={24} className="text-gray-400 mb-2" />
-                        <p className="mb-2 text-sm text-gray-400">
+                        <div className="w-14 h-14 mb-3 rounded-full bg-purple-600/20 flex items-center justify-center group-hover:scale-110 transition-transform">
+                          <Upload size={24} className="text-purple-400" />
+                        </div>
+                        <p className="mb-2 text-sm text-gray-300">
                           <span className="font-semibold">Click to upload</span> or drag and drop
                         </p>
                         <p className="text-xs text-gray-500">PNG, JPG or JPEG (MAX. 5MB each)</p>
@@ -350,10 +394,10 @@ export default function ReportEmergency() {
                   </div>
 
                   {imagePreview.length > 0 && (
-                    <div className="mt-4 grid grid-cols-2 sm:grid-cols-3 gap-3">
+                    <div className="mt-4 grid grid-cols-2 sm:grid-cols-3 gap-4">
                       {imagePreview.map((src, index) => (
                         <div key={index} className="relative group">
-                          <div className="relative h-24 w-full rounded-md overflow-hidden border border-gray-700">
+                          <div className="relative h-28 w-full rounded-xl overflow-hidden border border-purple-500/30 shadow-lg transition-transform group-hover:scale-[1.02]">
                             <Image
                               src={src || "/placeholder.svg"}
                               alt={`Preview ${index + 1}`}
@@ -364,7 +408,7 @@ export default function ReportEmergency() {
                           <button
                             type="button"
                             onClick={() => removeImage(index)}
-                            className="absolute -top-2 -right-2 bg-red-600 rounded-full p-1 shadow-lg opacity-90 group-hover:opacity-100 transition-opacity"
+                            className="absolute -top-2 -right-2 bg-red-600 rounded-full p-1.5 shadow-lg opacity-90 group-hover:opacity-100 transition-opacity"
                           >
                             <X size={14} />
                             <span className="sr-only">Remove image</span>
@@ -375,10 +419,13 @@ export default function ReportEmergency() {
                   )}
                 </div>
 
-                <div className="bg-gray-700/50 p-4 rounded-md border border-gray-600">
-                  <h3 className="text-lg font-medium text-white mb-3">Your Contact Information</h3>
+                <div className="bg-slate-800/50 p-6 rounded-xl border border-purple-500/30 shadow-inner">
+                  <h3 className="text-xl font-semibold text-white mb-4 flex items-center">
+                    <Phone size={18} className="mr-2 text-purple-400" />
+                    Your Contact Information
+                  </h3>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    <div>
+                    <div className="space-y-2">
                       <label className="block text-sm font-medium text-gray-300 mb-1">Your Name</label>
                       <input
                         type="text"
@@ -386,59 +433,60 @@ export default function ReportEmergency() {
                         value={formData.name}
                         onChange={handleChange}
                         required
-                        className="w-full p-3 bg-gray-700 border border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-purple-500 text-white"
+                        className="w-full p-3 bg-slate-800/80 border border-purple-500/30 rounded-xl focus:outline-none focus:ring-2 focus:ring-purple-500 text-white transition-all"
                       />
                     </div>
 
-                    <div>
-                      <label className="block text-sm font-medium text-gray-300 mb-1">
-                        <div className="flex items-center">
-                          <Phone size={16} className="mr-1" />
-                          Phone Number
-                        </div>
-                      </label>
+                    <div className="space-y-2">
+                      <label className="block text-sm font-medium text-gray-300 mb-1">Phone Number</label>
                       <input
                         type="tel"
                         name="phone"
                         value={formData.phone}
                         onChange={handleChange}
                         required
-                        className="w-full p-3 bg-gray-700 border border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-purple-500 text-white"
+                        className="w-full p-3 bg-slate-800/80 border border-purple-500/30 rounded-xl focus:outline-none focus:ring-2 focus:ring-purple-500 text-white transition-all"
                       />
                     </div>
                   </div>
                 </div>
 
-                <div className="bg-purple-900/20 p-4 rounded-md border border-purple-500/30">
-                  <h3 className="text-lg font-medium text-white mb-3 flex items-center">
-                    <span className="mr-2">🔗</span> Connect Wallet (Optional)
+                <div className="bg-purple-900/20 p-6 rounded-xl border border-purple-500/30 backdrop-blur-sm">
+                  <h3 className="text-xl font-semibold text-white mb-3 flex items-center">
+                    <span className="w-6 h-6 bg-purple-600/30 rounded-full flex items-center justify-center mr-2">
+                      🔗
+                    </span>
+                    Connect Wallet (Optional)
                   </h3>
                   <p className="text-gray-300 text-sm mb-4">
                     Connecting your wallet allows us to verify your identity on the blockchain and track the status of
-                    your emergency report.
+                    your emergency report securely.
                   </p>
                   <ConnectWalletButton onConnect={handleWalletConnect} />
                   {walletConnected && (
-                    <p className="text-green-400 text-sm mt-2">
-                      ✓ Wallet connected successfully! Your report will be linked to your wallet address.
-                    </p>
+                    <div className="flex items-center mt-3 p-2 bg-green-900/20 border border-green-500/30 rounded-lg">
+                      <CheckCircle size={16} className="text-green-500 mr-2" />
+                      <p className="text-green-400 text-sm">
+                        Wallet connected successfully! Your report will be linked to your wallet address.
+                      </p>
+                    </div>
                   )}
                 </div>
 
-                <div className="flex justify-end">
+                <div className="flex justify-end pt-4">
                   <button
                     type="submit"
                     disabled={isSubmitting}
-                    className="px-6 py-3 bg-gradient-to-r from-purple-600 to-purple-500 text-white rounded-md hover:from-purple-700 hover:to-purple-600 transition-colors flex items-center disabled:opacity-70 shadow-lg shadow-purple-700/20"
+                    className="px-8 py-4 bg-gradient-to-r from-purple-600 to-pink-600 text-white rounded-full hover:from-purple-700 hover:to-pink-700 transition-all flex items-center disabled:opacity-70 shadow-lg shadow-purple-700/20 transform hover:-translate-y-1"
                   >
                     {isSubmitting ? (
                       <>
-                        <Loader2 size={16} className="animate-spin mr-2" />
+                        <Loader2 size={20} className="animate-spin mr-3" />
                         Submitting...
                       </>
                     ) : (
                       <>
-                        <Send size={16} className="mr-2" />
+                        <Send size={18} className="mr-3" />
                         Submit Emergency Report
                       </>
                     )}
@@ -448,32 +496,46 @@ export default function ReportEmergency() {
             )}
           </div>
 
-          <div className="mt-8 bg-gray-800 border border-purple-500/30 rounded-xl shadow-lg p-6 backdrop-blur-sm">
-            <h2 className="text-xl font-bold text-white mb-4 flex items-center">
-              <AlertTriangle size={20} className="mr-2 text-purple-400" />
+          {/* Emergency Contact Information */}
+          <div className="mt-12 bg-slate-900/80 backdrop-blur-md border border-purple-500/20 rounded-2xl shadow-2xl p-8 relative overflow-hidden">
+            {/* Decorative background element */}
+            <div className="absolute -right-20 -bottom-20 w-64 h-64 bg-purple-600/5 rounded-full"></div>
+            <div className="absolute -left-10 -top-10 w-40 h-40 bg-pink-600/5 rounded-full"></div>
+
+            <h2 className="text-2xl font-bold text-white mb-6 flex items-center">
+              <AlertTriangle size={24} className="mr-3 text-purple-400" />
               Emergency Contact Information
             </h2>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              <div className="flex items-start">
-                <div className="bg-purple-900/50 p-2 rounded-full mr-3 border border-purple-500/50">
-                  <Phone size={20} className="text-purple-300" />
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+              <div className="flex items-start group">
+                <div className="bg-purple-900/30 p-3 rounded-xl mr-4 border border-purple-500/30 shadow-lg group-hover:bg-purple-900/50 transition-colors">
+                  <Phone size={24} className="text-purple-300" />
                 </div>
                 <div>
-                  <h3 className="font-medium text-white">Emergency Hotline</h3>
-                  <p className="text-purple-300">+1 (555) 123-4567</p>
+                  <h3 className="font-semibold text-white text-lg mb-1">Emergency Hotline</h3>
+                  <p className="text-purple-300 text-xl font-bold mb-1">+1 (555) 123-4567</p>
                   <p className="text-sm text-gray-400">Available 24/7 for animal emergencies</p>
                 </div>
               </div>
-              <div className="flex items-start">
-                <div className="bg-purple-900/50 p-2 rounded-full mr-3 border border-purple-500/50">
-                  <MapPin size={20} className="text-purple-300" />
+
+              <div className="flex items-start group">
+                <div className="bg-purple-900/30 p-3 rounded-xl mr-4 border border-purple-500/30 shadow-lg group-hover:bg-purple-900/50 transition-colors">
+                  <MapPin size={24} className="text-purple-300" />
                 </div>
                 <div>
-                  <h3 className="font-medium text-white">Rescue Center</h3>
-                  <p className="text-purple-300">123 Animal Care Lane, City, State</p>
+                  <h3 className="font-semibold text-white text-lg mb-1">Rescue Center</h3>
+                  <p className="text-purple-300 text-lg font-bold mb-1">123 Animal Care Lane</p>
                   <p className="text-sm text-gray-400">Open 8 AM - 8 PM daily</p>
                 </div>
               </div>
+            </div>
+
+            <div className="mt-8 p-4 bg-purple-900/20 border border-purple-500/30 rounded-xl">
+              <p className="text-center text-gray-300">
+                <span className="text-purple-300 font-semibold">Remember:</span> Your quick action can save an animal's
+                life. Please provide as much detail as possible to help our rescue teams respond effectively.
+              </p>
             </div>
           </div>
         </div>

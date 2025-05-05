@@ -52,19 +52,28 @@ const adoptionSchema = new mongoose.Schema({
   },
   postedBy: {
     type: mongoose.Schema.Types.ObjectId,
-    ref: 'User',
-    required: true
+    required: true,
+    refPath: 'postedByType'
   },
   postedByType: {
     type: String,
     required: true,
-    enum: ['donor', 'welfare']
+    enum: ['User', 'WelfareOrganization']
   },
   adoptedBy: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User'
   },
+  adoptionFee: {
+    type: Number,
+    required: true,
+    default: 0
+  },
   createdAt: {
+    type: Date,
+    default: Date.now
+  },
+  updatedAt: {
     type: Date,
     default: Date.now
   }
