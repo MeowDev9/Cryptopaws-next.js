@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { useRouter } from "next/navigation"
+import { useRouter, useSearchParams } from "next/navigation"
 import Image from "next/image"
 import Link from "next/link"
 import {
@@ -46,6 +46,7 @@ import { useToast } from "@/components/ui/use-toast"
 import { Toaster } from "@/components/ui/toaster"
 import { Button } from '@/components/ui/button'
 import { ethers } from 'ethers'
+import UpdateNotification from "@/components/UpdateNotification"
 import { toast } from 'sonner'
 
 const COLORS = ["#8b5cf6", "#6366f1", "#ec4899", "#10b981", "#f59e0b", "#ef4444"]
@@ -76,6 +77,7 @@ interface Case {
   welfareAddress: string | null;
   category: string;
   status: string;
+  isUrgent?: boolean;
   createdAt: string;
 }
 
@@ -168,31 +170,37 @@ interface AdoptionRequest {
 }
 
 export default function DonorDashboard() {
-  const router = useRouter()
-  const [activeTab, setActiveTab] = useState("overview")
-  const [cases, setCases] = useState<Case[]>([])
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
-  const [selectedCase, setSelectedCase] = useState<Case | null>(null)
-  const [showDonationModal, setShowDonationModal] = useState(false)
-  const [walletConnected, setWalletConnected] = useState(false)
-  const [walletAddress, setWalletAddress] = useState<string | null>(null)
-  const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
-  const [isSidebarOpen, setIsSidebarOpen] = useState(true)
-  const [userProfile, setUserProfile] = useState<UserProfile | null>(null)
-  const [searchQuery, setSearchQuery] = useState("")
-  const [filterOpen, setFilterOpen] = useState(false)
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const [authChecked, setAuthChecked] = useState(false);
+  const [activeTab, setActiveTab] = useState("overview");
+  const [cases, setCases] = useState<Case[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [selectedCase, setSelectedCase] = useState<Case | null>(null);
+  const [showDonationModal, setShowDonationModal] = useState(false);
+  const [walletConnected, setWalletConnected] = useState(false);
+  const [walletAddress, setWalletAddress] = useState<string | null>(null);
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [isSidebarOpen, setIsSidebarOpen] = useState(true);
+  const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [filterOpen, setFilterOpen] = useState(false);
   const [selectedFilters, setSelectedFilters] = useState({
+    welfare: "all",
     category: "all",
     status: "all",
     dateRange: "all",
-  })
-  const [donationHistory, setDonationHistory] = useState<DonationHistory[]>([])
-  const [savedWelfares, setSavedWelfares] = useState<SavedWelfare[]>([])
-  const [allWelfares, setAllWelfares] = useState<SavedWelfare[]>([])
-  const [isSavingWelfare, setIsSavingWelfare] = useState(false)
-  const [messages, setMessages] = useState<Message[]>([])
-  const [successStories, setSuccessStories] = useState<SuccessStory[]>([])
+    sort: "newest",
+    savedWelfaresOnly: false,
+    showUrgentOnly: false
+  });
+  const [donationHistory, setDonationHistory] = useState<DonationHistory[]>([]);
+  const [savedWelfares, setSavedWelfares] = useState<SavedWelfare[]>([]);
+  const [allWelfares, setAllWelfares] = useState<SavedWelfare[]>([]);
+  const [isSavingWelfare, setIsSavingWelfare] = useState(false);
+  const [messages, setMessages] = useState<Message[]>([]);
+  const [successStories, setSuccessStories] = useState<SuccessStory[]>([]);
   const [donationStats, setDonationStats] = useState({
     totalDonated: 0,
     casesSupported: 0,
@@ -204,18 +212,18 @@ export default function DonorDashboard() {
     },
     byWelfare: [] as { name: string; value: number }[],
     byCategory: [] as { name: string; value: number }[]
-  })
-  const [isEditing, setIsEditing] = useState(false)
-  const [editedProfile, setEditedProfile] = useState<UserProfile | null>(null)
-  const [isSavingProfile, setIsSavingProfile] = useState(false)
-  const [profileUpdateSuccess, setProfileUpdateSuccess] = useState(false)
-  const [profileUpdateError, setProfileUpdateError] = useState("")
-  const [emergencies, setEmergencies] = useState<Emergency[]>([])
-  const [selectedEmergency, setSelectedEmergency] = useState<Emergency | null>(null)
-  const [viewEmergencyDialogOpen, setViewEmergencyDialogOpen] = useState(false)
-  const [emergencyAssignedWelfare, setEmergencyAssignedWelfare] = useState<SavedWelfare | null>(null)
-  const [adoptions, setAdoptions] = useState<Adoption[]>([])
-  const [showAddAdoption, setShowAddAdoption] = useState(false)
+  });
+  const [isEditing, setIsEditing] = useState(false);
+  const [editedProfile, setEditedProfile] = useState<UserProfile | null>(null);
+  const [isSavingProfile, setIsSavingProfile] = useState(false);
+  const [profileUpdateSuccess, setProfileUpdateSuccess] = useState(false);
+  const [profileUpdateError, setProfileUpdateError] = useState("");
+  const [emergencies, setEmergencies] = useState<Emergency[]>([]);
+  const [selectedEmergency, setSelectedEmergency] = useState<Emergency | null>(null);
+  const [viewEmergencyDialogOpen, setViewEmergencyDialogOpen] = useState(false);
+  const [emergencyAssignedWelfare, setEmergencyAssignedWelfare] = useState<SavedWelfare | null>(null);
+
+  // Early auth check to prevent dashboard flash
   const [newAdoption, setNewAdoption] = useState({
     name: "",
     type: "",
@@ -249,7 +257,17 @@ export default function DonorDashboard() {
   // Add to the state section
   const [adoptionRequests, setAdoptionRequests] = useState<AdoptionRequest[]>([]);
   const [loadingRequests, setLoadingRequests] = useState(false);
+  
+  // Case updates state
+  const [caseUpdates, setCaseUpdates] = useState<any[]>([]);
+  const [isLoadingUpdates, setIsLoadingUpdates] = useState(false);
+  const [updatesError, setUpdatesError] = useState("");
   const [isLoading, setIsLoading] = useState(false);
+  
+  // Notification state
+  const [unseenUpdates, setUnseenUpdates] = useState<any[]>([]);
+  const [showNotification, setShowNotification] = useState(false);
+  const [currentNotification, setCurrentNotification] = useState<{caseId: string, caseTitle: string, updateId: string} | null>(null);
   const USDT_CONTRACT_ADDRESS = process.env.NEXT_PUBLIC_USDT_CONTRACT_ADDRESS || '0x3c44cdddb6a900fa2b585dd299e03d12fa4293bc';
 
   const fetchCases = async () => {
@@ -293,14 +311,25 @@ export default function DonorDashboard() {
             _id: caseItem._id,
             title: caseItem.title,
             description: caseItem.description,
-            targetAmount: caseItem.targetAmount.toString(),
-            amountRaised: caseItem.amountRaised ? caseItem.amountRaised.toString() : "0",
-            imageUrl: caseItem.imageUrl && caseItem.imageUrl.length > 0 ? caseItem.imageUrl[0] : "/images/placeholder.jpg",
+            targetAmount: caseItem.targetAmount !== undefined && caseItem.targetAmount !== null ? caseItem.targetAmount.toString() : "0",
+            amountRaised: caseItem.amountRaised !== undefined && caseItem.amountRaised !== null ? caseItem.amountRaised.toString() : "0",
+            imageUrl: caseItem.imageUrl 
+              ? (Array.isArray(caseItem.imageUrl) 
+                  ? (caseItem.imageUrl.length > 0 
+                      ? (caseItem.imageUrl[0].startsWith('http')
+                          ? caseItem.imageUrl[0]
+                          : `http://localhost:5001/uploads/${caseItem.imageUrl[0]}`)
+                      : "/images/placeholder.jpg")
+                  : (caseItem.imageUrl.startsWith('http')
+                      ? caseItem.imageUrl
+                      : `http://localhost:5001/uploads/${caseItem.imageUrl}`)) 
+              : "/images/placeholder.jpg",
             welfare: caseItem.createdBy ? caseItem.createdBy.name || "Unknown Welfare" : "Unknown Welfare",
             welfareId: caseItem.createdBy?._id || "",  // Added this field
             welfareAddress: caseItem.createdBy?.blockchainAddress || null,
             category: caseItem.medicalIssue || "General",
             status: caseItem.status || "Active",
+            isUrgent: caseItem.isUrgent || false, // Add the isUrgent flag
             createdAt: new Date(caseItem.createdAt).toISOString().split('T')[0]
           }
         })
@@ -319,8 +348,27 @@ export default function DonorDashboard() {
     }
   }
 
-  // Initial fetch of cases
+  // Initial fetch of cases and handle URL parameters
   useEffect(() => {
+    // Check for tab parameter in localStorage (set by notification component)
+    if (typeof window !== 'undefined') {
+      const storedTab = localStorage.getItem('activeTab')
+      if (storedTab) {
+        setActiveTab(storedTab)
+        // Remove after reading to avoid persisting between sessions
+        localStorage.removeItem('activeTab')
+      }
+      
+      // Check for caseId parameter in localStorage
+      const storedCaseId = localStorage.getItem('activeCaseId')
+      if (storedCaseId && (storedTab === 'case-updates' || activeTab === 'case-updates')) {
+        console.log('Case ID from localStorage:', storedCaseId)
+        // You can add logic here to highlight the specific case update
+        // Remove after reading
+        localStorage.removeItem('activeCaseId')
+      }
+    }
+    
     fetchCases()
   }, [router])
 
@@ -535,6 +583,118 @@ export default function DonorDashboard() {
     fetchMessages()
   }, [activeTab])
 
+  // Function to fetch unseen updates and show notifications
+  const fetchUnseenUpdates = async () => {
+    const token = localStorage.getItem("donorToken");
+    if (!token) return;
+    
+    try {
+      const response = await fetch("http://localhost:5001/api/donor/my-donated-cases-updates", {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      
+      if (!response.ok) return;
+      
+      const data = await response.json();
+      
+      // Filter for unseen updates
+      const unseen = data.updates.filter((update: any) => !update.seen);
+      setUnseenUpdates(unseen);
+      
+      // If there are unseen updates, show notification for the first one
+      if (unseen.length > 0 && !showNotification) {
+        const update = unseen[0];
+        const caseData = update.caseId;
+        if (caseData && caseData.title) {
+          setCurrentNotification({
+            caseId: caseData._id,
+            caseTitle: caseData.title,
+            updateId: update._id
+          });
+          setShowNotification(true);
+        }
+      }
+    } catch (error) {
+      console.error("Error fetching unseen updates:", error);
+    }
+  };
+  
+  // Function to mark all updates as seen
+  const markAllUpdatesAsSeen = async () => {
+    if (unseenUpdates.length === 0) return;
+    
+    const token = localStorage.getItem("donorToken");
+    if (!token) return;
+    
+    try {
+      // Mark each unseen update as seen
+      const markPromises = unseenUpdates.map(async (update: any) => {
+        await fetch(`http://localhost:5001/api/donor/mark-update-seen/${update._id}`, {
+          method: 'PUT',
+          headers: {
+            'Authorization': `Bearer ${token}`
+          }
+        });
+      });
+      
+      // Wait for all updates to be marked as seen
+      await Promise.all(markPromises);
+      
+      // Clear the unseen updates
+      setUnseenUpdates([]);
+    } catch (error) {
+      console.error("Error marking updates as seen:", error);
+    }
+  };
+
+  // Check for unseen updates periodically
+  useEffect(() => {
+    // Initial check
+    fetchUnseenUpdates();
+    
+    // Check every 30 seconds
+    const interval = setInterval(fetchUnseenUpdates, 30000);
+    
+    return () => clearInterval(interval);
+  }, []);
+
+  // Fetch case updates for cases the donor has donated to
+  useEffect(() => {
+    const fetchDonatedCasesUpdates = async () => {
+      const token = localStorage.getItem("donorToken");
+      if (!token) {
+        console.error("No token found");
+        return;
+      }
+      
+      try {
+        setIsLoadingUpdates(true);
+        setUpdatesError("");
+        
+        const response = await fetch("http://localhost:5001/api/donor/my-donated-cases-updates", {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        
+        if (!response.ok) {
+          throw new Error(`Failed to fetch updates: ${response.status} ${response.statusText}`);
+        }
+        
+        const data = await response.json();
+        console.log("Received case updates:", data);
+        setCaseUpdates(data.updates);
+      } catch (error) {
+        console.error("Error fetching case updates:", error);
+        setUpdatesError("Failed to load case updates. Please try again later.");
+      } finally {
+        setIsLoadingUpdates(false);
+      }
+    };
+    
+    if (activeTab === "case-updates") {
+      fetchDonatedCasesUpdates();
+    }
+  }, [activeTab, showNotification]);
+  
   // Fetch success stories
   useEffect(() => {
     const fetchSuccessStories = async () => {
@@ -655,7 +815,20 @@ export default function DonorDashboard() {
     setWalletAddress(address)
   }
 
-  const handleDonate = async (caseData: Case) => {
+  // Create a wrapper function that adapts CaseData to Case for handleDonate
+  const handleDonateWrapper = (caseData: CaseData) => {
+    // Find the original case with all required properties
+    const originalCase = cases.find(c => c._id === caseData._id);
+    
+    if (originalCase) {
+      handleDonateInternal(originalCase);
+    } else {
+      setError('Case details not found');
+    }
+  };
+  
+  // Internal function that works with the full Case type
+  const handleDonateInternal = async (caseData: Case) => {
     console.log('Donation initiated for case:', {
       caseId: caseData._id,
       welfare: caseData.welfare,
@@ -722,72 +895,43 @@ export default function DonorDashboard() {
 
       setShowDonationModal(false);
       
-      // Wait for a short delay to ensure the backend has processed the donation and created the message
-      await new Promise(resolve => setTimeout(resolve, 1000));
-      
-      // Switch to messages tab
-      setActiveTab("messages");
-      
-      // Fetch messages
-      const messagesResponse = await fetch("http://localhost:5001/api/donor/messages", {
+      // Refresh donation history
+      const historyResponse = await fetch("http://localhost:5001/api/donor/donations/history", {
         headers: {
           Authorization: `Bearer ${token}`
         }
       });
       
-      if (messagesResponse.ok) {
-        const messagesData = await messagesResponse.json();
-        const transformedMessages = messagesData.map((msg: any) => ({
-          id: msg._id,
-          welfare: msg.from?.name || "Unknown Welfare",
-          title: msg.title,
-          message: msg.content,
-          date: new Date(msg.createdAt).toLocaleDateString(),
-          image: msg.from?.profileImage || "/images/placeholder.jpg"
+      if (historyResponse.ok) {
+        const historyData = await historyResponse.json();
+        const transformedHistory = historyData.map((donation: any) => ({
+          id: donation._id,
+          welfare: donation.welfare?.name || "Unknown Welfare",
+          case: donation.case?.title || "Unknown Case",
+          amount: donation.amount.toString(),
+          amountUsd: donation.amountUsd.toString(),
+          date: new Date(donation.createdAt).toLocaleDateString(),
+          status: donation.status,
+          txHash: donation.txHash
         }));
-        setMessages(transformedMessages);
+        setDonationHistory(transformedHistory);
       }
       
-      // Refresh the cases to show updated amounts
-      await fetchCases();
-      
-      // Refresh donation history if on donations tab
-      if (activeTab === "donations") {
-        const historyResponse = await fetch("http://localhost:5001/api/donor/donations/history", {
-          headers: {
-            Authorization: `Bearer ${token}`
-          }
-        })
-        
-        if (historyResponse.ok) {
-          const historyData = await historyResponse.json()
-          const transformedHistory = historyData.map((donation: any) => ({
-            id: donation._id,
-            welfare: donation.welfare?.name || "Unknown Welfare",
-            case: donation.case?.title || "Unknown Case",
-            amount: donation.amount.toString(),
-            amountUsd: donation.amountUsd.toString(),
-            date: new Date(donation.createdAt).toLocaleDateString(),
-            status: donation.status,
-            txHash: donation.txHash
-          }))
-          setDonationHistory(transformedHistory)
-        }
-      }
+      // Switch to messages tab
+      setActiveTab("messages");
     } catch (error) {
-      console.error("Error recording donation:", error)
+      console.error("Error handling donation completion:", error);
       toast({
-        title: "Warning",
-        description: "Donation was successful on blockchain but failed to record in our system. Please contact support.",
+        title: "Error",
+        description: error instanceof Error ? error.message : "Failed to process donation",
         variant: "destructive",
-      })
+      });
     }
   };
 
   const handleLogout = () => {
     if (typeof window !== "undefined") {
-      // Comment out token removal for development
-      // localStorage.removeItem("donorToken")
+      localStorage.removeItem("donorToken");
       router.push("/login")
     }
   }
@@ -800,13 +944,85 @@ export default function DonorDashboard() {
     setFilterOpen(!filterOpen)
   }
 
-  const applyFilter = (type: 'category' | 'status' | 'dateRange', value: string) => {
+  const applyFilter = (type: 'welfare' | 'category' | 'status' | 'dateRange' | 'sort' | 'savedWelfaresOnly' | 'showUrgentOnly', value: string | boolean) => {
     setSelectedFilters({
       ...selectedFilters,
       [type]: value,
     })
   }
 
+  // Filter cases based on all selected criteria
+  const filterCases = () => {
+    return cases.filter(caseItem => {
+      // Filter by search query
+      const matchesSearch = searchQuery === '' || 
+        caseItem.title.toLowerCase().includes(searchQuery.toLowerCase()) || 
+        caseItem.description.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        caseItem.welfare.toLowerCase().includes(searchQuery.toLowerCase());
+      
+      // Filter by welfare
+      const matchesWelfare = selectedFilters.welfare === 'all' || 
+        caseItem.welfareId === selectedFilters.welfare;
+      
+      // Filter by saved welfares only
+      const matchesSavedWelfares = !selectedFilters.savedWelfaresOnly || 
+        savedWelfares.some(welfare => welfare.id === caseItem.welfareId);
+      
+      // Filter by category (animal type)
+      const matchesCategory = selectedFilters.category === 'all' || 
+        caseItem.category.toLowerCase() === selectedFilters.category.toLowerCase();
+      
+      // Filter by status
+      const matchesStatus = selectedFilters.status === 'all' || 
+        caseItem.status.toLowerCase() === selectedFilters.status.toLowerCase();
+        
+      // Filter by urgent flag
+      const matchesUrgent = !selectedFilters.showUrgentOnly || caseItem.isUrgent === true;
+      
+      // Filter by date range
+      let matchesDateRange = true;
+      if (selectedFilters.dateRange !== 'all') {
+        const caseDate = new Date(caseItem.createdAt);
+        const now = new Date();
+        if (selectedFilters.dateRange === 'week') {
+          const weekAgo = new Date();
+          weekAgo.setDate(now.getDate() - 7);
+          matchesDateRange = caseDate >= weekAgo;
+        } else if (selectedFilters.dateRange === 'month') {
+          const monthAgo = new Date();
+          monthAgo.setMonth(now.getMonth() - 1);
+          matchesDateRange = caseDate >= monthAgo;
+        }
+      }
+      
+      return matchesSearch && 
+        matchesWelfare && 
+        matchesSavedWelfares && 
+        matchesCategory && 
+        matchesStatus && 
+        matchesDateRange && 
+        matchesUrgent;
+    }).sort((a, b) => {
+      // Sort cases based on selected sort option
+      switch (selectedFilters.sort) {
+        case 'newest':
+          return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+        case 'oldest':
+          return new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
+        case 'most-funded':
+          return parseFloat(b.amountRaised) - parseFloat(a.amountRaised);
+        case 'least-funded':
+          return parseFloat(a.amountRaised) - parseFloat(b.amountRaised);
+        case 'highest-target':
+          return parseFloat(b.targetAmount) - parseFloat(a.targetAmount);
+        case 'lowest-target':
+          return parseFloat(a.targetAmount) - parseFloat(b.targetAmount);
+        default:
+          return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+      }
+    });
+  };
+  
   // Add this function to save a welfare
   const saveWelfare = async (welfareId: string) => {
     try {
@@ -1391,6 +1607,15 @@ export default function DonorDashboard() {
 
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
+      {/* Notification popup for new case updates */}
+      {showNotification && currentNotification && (
+        <UpdateNotification
+          caseId={currentNotification.caseId}
+          caseTitle={currentNotification.caseTitle}
+          updateId={currentNotification.updateId}
+          onClose={() => setShowNotification(false)}
+        />
+      )}
       <Toaster />
       {/* Mobile Menu Button */}
       <div className="md:hidden fixed top-4 right-4 z-50">
@@ -1449,6 +1674,26 @@ export default function DonorDashboard() {
             >
               <CreditCard size={20} />
               <span>My Donations</span>
+            </button>
+            <button
+              onClick={() => {
+                setActiveTab("case-updates");
+                // Mark all updates as seen when clicking this tab
+                markAllUpdatesAsSeen();
+              }}
+              className={`w-full flex items-center justify-between p-2 rounded-lg ${
+                activeTab === "case-updates" ? "bg-purple-600" : "hover:bg-gray-700"
+              }`}
+            >
+              <div className="flex items-center space-x-2">
+                <ClipboardList size={20} />
+                <span>Case Updates</span>
+              </div>
+              {unseenUpdates.length > 0 && (
+                <div className="bg-red-500 text-white text-xs font-bold rounded-full w-5 h-5 flex items-center justify-center animate-pulse">
+                  {unseenUpdates.length}
+                </div>
+              )}
             </button>
             <button
               onClick={() => setActiveTab("saved")}
@@ -1708,9 +1953,57 @@ export default function DonorDashboard() {
                   <ChevronDown size={16} />
                 </button>
                 {filterOpen && (
-                  <div className="absolute right-0 mt-2 w-64 bg-gray-800 rounded-lg shadow-lg z-10 p-4">
+                  <div className="absolute right-0 mt-2 w-72 bg-gray-800 rounded-lg shadow-lg z-10 p-4 max-h-[80vh] overflow-y-auto">
+                    {/* Welfare Organizations Filter */}
                     <div className="mb-4">
-                      <h4 className="font-bold mb-2">Category</h4>
+                      <h4 className="font-bold mb-2">Welfare Organizations</h4>
+                      <div className="space-y-2">
+                        <label className="flex items-center">
+                          <input
+                            type="radio"
+                            name="welfare"
+                            value="all"
+                            checked={selectedFilters.welfare === "all"}
+                            onChange={() => applyFilter("welfare", "all")}
+                            className="mr-2"
+                          />
+                          All Welfares
+                        </label>
+                        {/* Saved Welfares Only Toggle */}
+                        <label className="flex items-center mt-2">
+                          <input
+                            type="checkbox"
+                            checked={selectedFilters.savedWelfaresOnly}
+                            onChange={() => applyFilter("savedWelfaresOnly", !selectedFilters.savedWelfaresOnly)}
+                            className="mr-2"
+                          />
+                          Saved Welfares Only
+                        </label>
+                        {/* Individual Welfare Options */}
+                        {savedWelfares.length > 0 && (
+                          <div className="mt-2 pl-2 border-l-2 border-gray-700">
+                            <p className="text-sm text-gray-400 mb-1">Saved Welfares:</p>
+                            {savedWelfares.map(welfare => (
+                              <label key={welfare.id} className="flex items-center mt-1">
+                                <input
+                                  type="radio"
+                                  name="welfare"
+                                  value={welfare.id}
+                                  checked={selectedFilters.welfare === welfare.id}
+                                  onChange={() => applyFilter("welfare", welfare.id)}
+                                  className="mr-2"
+                                />
+                                <span className="text-sm truncate">{welfare.name}</span>
+                              </label>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                    
+                    {/* Animal Types (Category) Filter */}
+                    <div className="mb-4">
+                      <h4 className="font-bold mb-2">Animal Types</h4>
                       <div className="space-y-2">
                         <label className="flex items-center">
                           <input
@@ -1721,7 +2014,29 @@ export default function DonorDashboard() {
                             onChange={() => applyFilter("category", "all")}
                             className="mr-2"
                           />
-                          All
+                          All Animals
+                        </label>
+                        <label className="flex items-center">
+                          <input
+                            type="radio"
+                            name="category"
+                            value="dog"
+                            checked={selectedFilters.category === "dog"}
+                            onChange={() => applyFilter("category", "dog")}
+                            className="mr-2"
+                          />
+                          Dogs
+                        </label>
+                        <label className="flex items-center">
+                          <input
+                            type="radio"
+                            name="category"
+                            value="cat"
+                            checked={selectedFilters.category === "cat"}
+                            onChange={() => applyFilter("category", "cat")}
+                            className="mr-2"
+                          />
+                          Cats
                         </label>
                         <label className="flex items-center">
                           <input
@@ -1732,7 +2047,7 @@ export default function DonorDashboard() {
                             onChange={() => applyFilter("category", "medical")}
                             className="mr-2"
                           />
-                          Medical
+                          Medical Cases
                         </label>
                         <label className="flex items-center">
                           <input
@@ -1745,10 +2060,45 @@ export default function DonorDashboard() {
                           />
                           Shelter
                         </label>
-                  </div>
+                        <label className="flex items-center">
+                          <input
+                            type="radio"
+                            name="category"
+                            value="donkey"
+                            checked={selectedFilters.category === "donkey"}
+                            onChange={() => applyFilter("category", "donkey")}
+                            className="mr-2"
+                          />
+                          Donkey
+                        </label>
+                        <label className="flex items-center">
+                          <input
+                            type="radio"
+                            name="category"
+                            value="cow"
+                            checked={selectedFilters.category === "cow"}
+                            onChange={() => applyFilter("category", "cow")}
+                            className="mr-2"
+                          />
+                          Cow
+                        </label>
+                        <label className="flex items-center">
+                          <input
+                            type="radio"
+                            name="category"
+                            value="goat"
+                            checked={selectedFilters.category === "goat"}
+                            onChange={() => applyFilter("category", "goat")}
+                            className="mr-2"
+                          />
+                          Goat
+                        </label>
+                      </div>
                     </div>
+                    
+                    {/* Case Status Filter */}
                     <div className="mb-4">
-                      <h4 className="font-bold mb-2">Status</h4>
+                      <h4 className="font-bold mb-2">Case Status</h4>
                       <div className="space-y-2">
                         <label className="flex items-center">
                           <input
@@ -1759,7 +2109,7 @@ export default function DonorDashboard() {
                             onChange={() => applyFilter("status", "all")}
                             className="mr-2"
                           />
-                          All
+                          All Statuses
                         </label>
                         <label className="flex items-center">
                           <input
@@ -1772,6 +2122,7 @@ export default function DonorDashboard() {
                           />
                           Active
                         </label>
+
                         <label className="flex items-center">
                           <input
                             type="radio"
@@ -1783,8 +2134,77 @@ export default function DonorDashboard() {
                           />
                           Completed
                         </label>
+                      </div>
                     </div>
-                  </div>
+                    
+                    {/* Urgent Filter */}
+                    <div className="mb-4">
+                      <h4 className="font-bold mb-2">Urgent Cases</h4>
+                      <div className="space-y-2">
+                        <label className="flex items-center">
+                          <input
+                            type="checkbox"
+                            checked={selectedFilters.showUrgentOnly}
+                            onChange={() => applyFilter("showUrgentOnly", !selectedFilters.showUrgentOnly)}
+                            className="mr-2"
+                          />
+                          Show urgent cases only
+                        </label>
+                      </div>
+                    </div>
+                    
+                    {/* Sort Options */}
+                    <div className="mb-4">
+                      <h4 className="font-bold mb-2">Sort By</h4>
+                      <div className="space-y-2">
+                        <label className="flex items-center">
+                          <input
+                            type="radio"
+                            name="sort"
+                            value="newest"
+                            checked={selectedFilters.sort === "newest"}
+                            onChange={() => applyFilter("sort", "newest")}
+                            className="mr-2"
+                          />
+                          Newest First
+                        </label>
+                        <label className="flex items-center">
+                          <input
+                            type="radio"
+                            name="sort"
+                            value="oldest"
+                            checked={selectedFilters.sort === "oldest"}
+                            onChange={() => applyFilter("sort", "oldest")}
+                            className="mr-2"
+                          />
+                          Oldest First
+                        </label>
+                        <label className="flex items-center">
+                          <input
+                            type="radio"
+                            name="sort"
+                            value="most-funded"
+                            checked={selectedFilters.sort === "most-funded"}
+                            onChange={() => applyFilter("sort", "most-funded")}
+                            className="mr-2"
+                          />
+                          Most Funded
+                        </label>
+                        <label className="flex items-center">
+                          <input
+                            type="radio"
+                            name="sort"
+                            value="least-funded"
+                            checked={selectedFilters.sort === "least-funded"}
+                            onChange={() => applyFilter("sort", "least-funded")}
+                            className="mr-2"
+                          />
+                          Least Funded
+                        </label>
+                      </div>
+                    </div>
+                    
+                    {/* Date Range Filter */}
                     <div>
                       <h4 className="font-bold mb-2">Date Range</h4>
                       <div className="space-y-2">
@@ -1821,8 +2241,8 @@ export default function DonorDashboard() {
                           />
                           Last Month
                         </label>
-                </div>
-              </div>
+                      </div>
+                    </div>
             </div>
           )}
               </div>
@@ -1844,20 +2264,203 @@ export default function DonorDashboard() {
                 </div>
               ) : (
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                  {cases.map((caseItem) => (
-                    <CaseCard
-                      key={caseItem._id}
-                      caseData={caseItem}
-                    onDonate={handleDonate}
-                      walletConnected={walletConnected}
-                    />
-                  ))}
+                  {filterCases().map((caseItem) => {
+                    // Convert Case to CaseData format expected by CaseCard
+                    const cardData = {
+                      _id: caseItem._id,
+                      title: caseItem.title,
+                      description: caseItem.description,
+                      targetAmount: caseItem.targetAmount,
+                      amountRaised: caseItem.amountRaised,
+                      imageUrl: caseItem.imageUrl,
+                      welfareAddress: caseItem.welfareAddress || undefined,
+                      status: caseItem.status,
+                      isUrgent: caseItem.isUrgent
+                    };
+                    
+                    return (
+                      <CaseCard
+                        key={caseItem._id}
+                        caseData={cardData}
+                        onDonate={handleDonateWrapper}
+                        walletConnected={walletConnected}
+                      />
+                    );
+                  })}
                 </div>
               )}
             </div>
           )}
 
           {/* My Donations Tab */}
+          {activeTab === "case-updates" && (
+            <div className="p-6 bg-gray-800 rounded-lg shadow-md">
+              <h2 className="text-2xl font-bold mb-4">Case Updates</h2>
+              <p className="text-gray-400 mb-6">
+                View updates for cases you've donated to. Stay informed about the progress and impact of your contributions.
+              </p>
+              
+              {isLoadingUpdates ? (
+                <div className="flex justify-center items-center py-10">
+                  <Loader2 className="w-10 h-10 text-purple-500 animate-spin" />
+                  <span className="ml-2 text-gray-400">Loading updates...</span>
+                </div>
+              ) : updatesError ? (
+                <div className="bg-red-900/20 border border-red-700 text-red-200 p-4 rounded-md">
+                  <AlertTriangle className="inline-block mr-2" />
+                  {updatesError}
+                </div>
+              ) : caseUpdates.length === 0 ? (
+                <div className="bg-gray-700/30 border border-gray-600 rounded-lg p-8 text-center">
+                  <ClipboardList className="w-12 h-12 text-gray-500 mx-auto mb-3" />
+                  <p className="text-gray-400 text-lg mb-2">No updates available</p>
+                  <p className="text-gray-500">
+                    We don't have any updates for the cases you've donated to yet. Check back later or donate to more cases to see their progress.
+                  </p>
+                </div>
+              ) : (
+                <div className="space-y-8">
+                  {/* Group updates by case */}
+                  {Object.entries(
+                    caseUpdates.reduce((acc: any, update: any) => {
+                      const caseId = update.caseId?._id || 'unknown';
+                      if (!acc[caseId]) {
+                        acc[caseId] = {
+                          caseDetails: update.caseId,
+                          updates: []
+                        };
+                      }
+                      acc[caseId].updates.push(update);
+                      return acc;
+                    }, {})
+                  ).map(([caseId, caseData]: [string, any]) => (
+                    <div key={caseId} className="bg-gray-700/30 border border-gray-600 rounded-lg overflow-hidden">
+                      {/* Case header */}
+                      <div className="bg-gray-700 p-4 flex items-center justify-between">
+                        <div className="flex items-center">
+                          {caseData.caseDetails?.imageUrl ? (
+                            <div className="relative w-12 h-12 rounded-md overflow-hidden mr-3">
+                              <Image
+                                src={(() => {
+                                  // Handle different image URL formats safely
+                                  let imgPath = '';
+                                  try {
+                                    if (typeof caseData.caseDetails.imageUrl === 'string') {
+                                      imgPath = caseData.caseDetails.imageUrl;
+                                    } else if (Array.isArray(caseData.caseDetails.imageUrl) && caseData.caseDetails.imageUrl.length > 0) {
+                                      imgPath = caseData.caseDetails.imageUrl[0];
+                                    }
+                                    
+                                    if (!imgPath) return '/images/pet-placeholder.png';
+                                    return `http://localhost:5001${imgPath.startsWith('/') ? '' : '/'}${imgPath}`;
+                                  } catch (error) {
+                                    console.error('Error processing image URL:', error);
+                                    return '/images/pet-placeholder.png';
+                                  }
+                                })()} 
+                                alt={caseData.caseDetails?.title || 'Case'}
+                                fill
+                                className="object-cover"
+                                onError={(e) => {
+                                  console.error(`Failed to load image`);
+                                  (e.target as HTMLImageElement).style.display = 'none';
+                                }}
+                              />
+                            </div>
+                          ) : (
+                            <PawPrint className="w-10 h-10 text-gray-400 mr-3" />
+                          )}
+                          <div>
+                            <h3 className="font-semibold text-lg">{caseData.caseDetails?.title || 'Unknown Case'}</h3>
+                            <p className="text-gray-400 text-sm">{caseData.caseDetails?.animalType || 'Animal'}</p>
+                          </div>
+                        </div>
+                        <div className="text-sm text-gray-400">
+                          {caseData.updates.length} update{caseData.updates.length !== 1 ? 's' : ''}
+                        </div>
+                      </div>
+                      
+                      {/* Updates timeline */}
+                      <div className="p-4">
+                        <div className="space-y-6">
+                          {caseData.updates.map((update: any) => (
+                            <div key={update._id} className="border-l-2 border-purple-600 pl-4 pb-6 relative">
+                              {/* Timeline dot */}
+                              <div className="absolute -left-[9px] top-0 w-4 h-4 rounded-full bg-purple-600"></div>
+                              
+                              <div className="mb-2 flex justify-between items-start">
+                                <h4 className="font-medium text-lg">{update.title}</h4>
+                                <span className="text-xs text-gray-400">
+                                  {new Date(update.createdAt).toLocaleDateString(undefined, {
+                                    year: 'numeric',
+                                    month: 'short',
+                                    day: 'numeric',
+                                    hour: '2-digit',
+                                    minute: '2-digit'
+                                  })}
+                                </span>
+                              </div>
+                              
+                              <p className="text-gray-300 mb-3">{update.content}</p>
+                              
+                              {/* Display images if available */}
+                              {update.imageUrl && update.imageUrl.length > 0 && (
+                                <>
+                                  <div className="text-xs text-gray-400 mb-1">Images:</div>
+                                  <div className="grid grid-cols-2 md:grid-cols-3 gap-2 mt-2">
+                                    {update.imageUrl.map((img: any, index: number) => {
+                                      // Skip invalid image paths
+                                      if (!img || typeof img !== 'string') {
+                                        console.error('Invalid image path:', img);
+                                        return null;
+                                      }
+                                      
+                                      // Construct URL safely
+                                      let imageUrl;
+                                      try {
+                                        imageUrl = `http://localhost:5001${img.startsWith('/') ? '' : '/'}${img}`;
+                                      } catch (error) {
+                                        console.error('Error constructing image URL:', error);
+                                        return null;
+                                      }
+                                      
+                                      return (
+                                        <div key={index} className="relative h-24 rounded overflow-hidden border border-gray-600">
+                                          <Image 
+                                            src={imageUrl}
+                                            alt={`Update image ${index + 1}`}
+                                            fill
+                                            className="object-cover"
+                                            onError={(e) => {
+                                              console.error(`Failed to load image: ${imageUrl}`);
+                                              // Hide the image if it fails to load
+                                              (e.target as HTMLImageElement).style.display = 'none';
+                                            }}
+                                          />
+                                        </div>
+                                      );
+                                    })}
+                                  </div>
+                                </>
+                              )}
+                              
+                              {/* Animal status if available */}
+                              {update.animalStatus && (
+                                <div className="mt-3 inline-block bg-purple-900/30 border border-purple-700/50 rounded-full px-3 py-1 text-sm">
+                                  Status: {update.animalStatus}
+                                </div>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+          
           {activeTab === "donations" && (
             <div className="space-y-6">
             <div className="bg-card rounded-xl p-6 border border-border">

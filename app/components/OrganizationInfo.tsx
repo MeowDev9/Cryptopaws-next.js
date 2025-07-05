@@ -26,7 +26,15 @@ export default function OrganizationInfo({ organizationAddress }: OrganizationIn
     const fetchDetails = async () => {
       try {
         const info = await getOrganizationInfo(organizationAddress)
-        setDetails(info)
+        console.log("Organization info returned:", info);
+        // Ensure the data matches the OrganizationDetails interface
+        setDetails({
+          name: info.name || 'Unknown Organization',
+          description: info.description || 'No description available.',
+          totalDonations: info.totalDonations ? info.totalDonations.toString() : '0',
+          uniqueDonors: info.uniqueDonors ? Number(info.uniqueDonors) : 0,
+          isActive: info.isActive || false
+        })
       } catch (error) {
         console.error("Error fetching organization details:", error)
       } finally {

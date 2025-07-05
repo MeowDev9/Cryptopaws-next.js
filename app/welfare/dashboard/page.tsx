@@ -1,6 +1,6 @@
 "use client"
 
-import React, { useState, useEffect } from "react"
+import React, { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation"
 import Image from "next/image"
 import {
@@ -40,6 +40,8 @@ import {
   MapPin,
   Menu,
   ClipboardList,
+  RefreshCw,
+  Save,
 } from "lucide-react"
 import ConnectWalletButton from "@/components/ConnectWalletButton"
 import Link from "next/link"
@@ -103,6 +105,7 @@ interface Case {
   imageUrl: string
   category: string
   status: string
+  isUrgent?: boolean
   createdAt: string
   assignedDoctor?: {
     _id: string
@@ -170,6 +173,7 @@ interface NewCase {
   images: File[]
   assignedDoctor?: string  // This should be the doctor's _id
   medicalIssue?: string
+  animalType: string  // Added animal type field
   costBreakdown: {
     surgery: string
     medicine: string
@@ -203,7 +207,7 @@ interface Doctor {
 interface NewDoctor {
   name: string
   email: string
-  password: string
+  password?: string
   specialization: string
 }
 
@@ -305,12 +309,14 @@ export default function WelfareDashboard() {
   })
   const [cases, setCases] = useState<Case[]>([])
   const [showAddCase, setShowAddCase] = useState(false)
+  const [showEditCase, setShowEditCase] = useState(false)
   const [newCase, setNewCase] = useState<NewCase>({
     title: "",
     description: "",
     targetAmount: "",
     imageUrl: "",
     images: [],
+    animalType: "dog", // Default animal type
     costBreakdown: {
       surgery: "",
       medicine: "",
@@ -318,9 +324,20 @@ export default function WelfareDashboard() {
       other: "",
     },
   })
+  const [editingCase, setEditingCase] = useState({
+    _id: "",
+    title: "",
+    description: "",
+    targetAmount: "",
+    category: "medical",
+    imageFile: null as File | null,
+    imagePreview: "",
+    currentImageUrl: ""
+  })
   const [emergencies, setEmergencies] = useState<Emergency[]>([])
   const [selectedEmergency, setSelectedEmergency] = useState<Emergency | null>(null)
   const [showEmergencyDetails, setShowEmergencyDetails] = useState(false)
+  const [isCreatingCase, setIsCreatingCase] = useState(false)
   const [emergencyDiagnosis, setEmergencyDiagnosis] = useState<EmergencyDiagnosis>({
     assignedDoctor: "",
     medicalIssue: "",
@@ -341,6 +358,8 @@ export default function WelfareDashboard() {
     images: [],
     isSuccessStory: false,
   })
+  
+  // State variables for case management
   const [donations, setDonations] = useState<{
     items: Array<{
       _id: string;
@@ -390,7 +409,6 @@ export default function WelfareDashboard() {
   const [newDoctor, setNewDoctor] = useState<NewDoctor>({
     name: "",
     email: "",
-    password: "",
     specialization: ""
   })
 
@@ -466,40 +484,93 @@ export default function WelfareDashboard() {
     }
   }, [router]);
 
+  // Function to fetch all cases
+  const fetchCases = useCallback(async () => {
+    try {
+      console.log('Fetching all cases...');
+      const token = localStorage.getItem('welfareToken');
+      if (!token) return;
+
+      const response = await fetch('http://localhost:5001/api/welfare/cases', {
+        headers: {
+          'Authorization': `Bearer ${token}`
+        },
+        // Prevent caching to ensure fresh data
+        cache: 'no-store'
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to fetch cases');
+      }
+
+      const cases = await response.json();
+      console.log('Fetched cases:', cases.length);
+      setCases(cases);
+    } catch (error: unknown) {
+      console.error('Error fetching cases:', error);
+      toast({
+        title: "Error",
+        description: handleError(error),
+        variant: "destructive",
+      });
+    }
+  }, [toast, handleError]);
+
+  // Function to fetch a single case by ID to get the latest data
+  const fetchCaseById = async (caseId: string) => {
+    try {
+      const token = localStorage.getItem('welfareToken');
+      if (!token) return null;
+
+      // Using the correct API endpoint for single case
+      const response = await fetch(`http://localhost:5001/api/welfare/case/${caseId}`, {
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to fetch case details');
+      }
+
+      const caseData = await response.json();
+      console.log('Fetched updated case data:', caseData);
+      
+      // Update the case in the cases array
+      setCases(prevCases => prevCases.map(c => 
+        c._id === caseId ? caseData : c
+      ));
+      
+      return caseData;
+    } catch (error: unknown) {
+      console.error('Error fetching case details:', error);
+      toast({
+        title: "Error",
+        description: handleError(error),
+        variant: "destructive",
+      });
+      return null;
+    }
+  };
+
   // Fetch cases when component mounts or active tab changes
   useEffect(() => {
-    const fetchCases = async () => {
-      try {
-        const token = localStorage.getItem('welfareToken');
-        if (!token) return;
-
-        const response = await fetch('http://localhost:5001/api/welfare/cases', {
-          headers: {
-            'Authorization': `Bearer ${token}`
-          }
-        });
-
-        if (!response.ok) {
-          throw new Error('Failed to fetch cases');
-        }
-
-        const cases = await response.json();
-        setCases(cases);
-      } catch (error: unknown) {
-        console.error('Error fetching cases:', error);
-        toast({
-          title: "Error",
-          description: handleError(error),
-          variant: "destructive",
-        });
-      }
-    };
-
     // Only fetch cases when on dashboard or cases tab
     if (activeTab === 'dashboard' || activeTab === 'cases') {
       fetchCases();
+      
+      // Set up a periodic refresh for cases data (every 30 seconds)
+      const refreshInterval = setInterval(() => {
+        if (activeTab === 'dashboard' || activeTab === 'cases') {
+          console.log('Auto-refreshing cases data...');
+          fetchCases();
+        }
+      }, 30000); // 30 seconds
+      
+      // Clean up interval on unmount or tab change
+      return () => clearInterval(refreshInterval);
     }
-  }, [activeTab, router]);
+  }, [activeTab, fetchCases]);
 
   useEffect(() => {
     // Check if user is logged in
@@ -598,6 +669,7 @@ export default function WelfareDashboard() {
     formData.append("description", newCase.description)
     formData.append("targetAmount", newCase.targetAmount)
     formData.append("welfareAddress", walletAddress)
+    formData.append("animalType", newCase.animalType) // Add animal type to form data
     if (newCase.images && newCase.images.length > 0) {
       newCase.images.forEach((image) => {
         formData.append("images", image)
@@ -663,6 +735,7 @@ export default function WelfareDashboard() {
           images: [],
           assignedDoctor: "",
           medicalIssue: "",
+          animalType: "dog", // Include animal type field
           costBreakdown: {
             surgery: "",
             medicine: "",
@@ -681,27 +754,113 @@ export default function WelfareDashboard() {
       })
   }
 
-  const handleDeleteCase = async (id: string) => {
-    const token = localStorage.getItem("welfareToken")
-
+  const handleEditCase = (caseData: Case) => {
+    // Set the editing case data
+    setEditingCase({
+      _id: caseData._id || '',
+      title: caseData.title || '',
+      description: caseData.description || '',
+      targetAmount: caseData.targetAmount?.toString() || '',
+      category: caseData.category || 'medical',
+      imageFile: null,
+      imagePreview: '',
+      currentImageUrl: caseData.imageUrl || ''
+    });
+    
+    // Show the edit case modal
+    setShowEditCase(true);
+  }
+  
+  const handleUpdateCase = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const token = localStorage.getItem("welfareToken");
+    
+    if (!token) {
+      console.error("No token found");
+      return;
+    }
+    
     try {
-      const response = await fetch(`http://localhost:5001/api/welfare/cases/${id}`, {
-        method: "DELETE",
+      // Create form data for the API request
+      const formData = new FormData();
+      formData.append('title', editingCase.title);
+      formData.append('description', editingCase.description);
+      formData.append('targetAmount', editingCase.targetAmount);
+      formData.append('category', editingCase.category);
+      
+      // Only append image if a new one is selected
+      if (editingCase.imageFile) {
+        formData.append('image', editingCase.imageFile);
+      }
+      
+      // Make the API request to update the case
+      const response = await fetch(`http://localhost:5001/api/welfare/cases/${editingCase._id}`, {
+        method: 'PUT',
         headers: {
           Authorization: `Bearer ${token}`
         },
-      })
-
-      const result = await response.json()
-      console.log("Delete Response:", result)
-
+        body: formData
+      });
+      
+      // Check if response is OK before trying to parse JSON
       if (response.ok) {
-        setCases(cases.filter((c) => c._id !== id)) // Remove from UI
+        const result = await response.json();
+        
+        // Update the cases list with the updated case
+        setCases(cases.map(c => c._id === editingCase._id ? result.case : c));
+        
+        // Close the edit modal and show success message
+        setShowEditCase(false);
+        toast({
+          title: "Success",
+          description: "Case updated successfully",
+          variant: "default",
+        });
       } else {
-        console.error("Failed to delete case:", result.message)
+        // Don't try to read the response body if status is 404
+        if (response.status === 404) {
+          console.error("API endpoint not found (404)");
+          toast({
+            title: "Error",
+            description: `API endpoint not found (404)`,
+            variant: "destructive",
+          });
+        } else {
+          // For other errors, clone the response before reading
+          const responseClone = response.clone();
+          try {
+            // Try to parse error as JSON
+            const errorData = await response.json();
+            console.error("Failed to update case:", errorData.message);
+            toast({
+              title: "Error",
+              description: errorData.message || "Failed to update case",
+              variant: "destructive",
+            });
+          } catch (jsonError) {
+            // If not JSON, get the text response from the cloned response
+            try {
+              const textError = await responseClone.text();
+              console.error("Server returned non-JSON response:", textError);
+            } catch (textError) {
+              console.error("Could not read response body");
+            }
+            
+            toast({
+              title: "Error",
+              description: `Server error (${response.status})`,
+              variant: "destructive",
+            });
+          }
+        }
       }
     } catch (error) {
-      console.error("Error deleting case:", error)
+      console.error("Error updating case:", error);
+      toast({
+        title: "Error",
+        description: "An error occurred while updating the case",
+        variant: "destructive",
+      });
     }
   }
 
@@ -730,6 +889,7 @@ export default function WelfareDashboard() {
 
   const handleDiagnosisChange = (e: React.ChangeEvent<HTMLTextAreaElement | HTMLInputElement | HTMLSelectElement>) => {
     const { name, value } = e.target
+    console.log(`Diagnosis change: ${name} = ${value}`);
     setEmergencyDiagnosis((prev) => ({
       ...prev,
       [name]: value,
@@ -893,6 +1053,7 @@ export default function WelfareDashboard() {
           description: selectedEmergency.description,
           targetAmount: selectedEmergency.estimatedCost?.toString() || "0",
           category: "Emergency",
+          animalType: selectedEmergency.animalType, // Explicitly include animal type
           welfareId: welfareId
         })
       });
@@ -1088,184 +1249,202 @@ export default function WelfareDashboard() {
     }
   }
 
-  // Add a new function to directly create a case from emergency data
-  const createCaseDirectly = async () => {
+  // Function to fetch emergencies
+  const getEmergencies = async () => {
     try {
-      if (!selectedEmergency) {
-        alert("Please select an emergency first");
+      const token = localStorage.getItem('welfareToken');
+      if (!token) {
         return;
       }
 
-      if (!walletAddress) {
-        alert("Please connect your wallet first");
+      const response = await fetch('http://localhost:5001/api/emergency', {
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to fetch emergencies');
+      }
+
+      const data = await response.json();
+      console.log('Fetched emergencies:', data);
+      setEmergencies(data);
+    } catch (error) {
+      console.error('Error fetching emergencies:', error);
+      toast({
+        title: "Error",
+        description: "Failed to fetch emergencies",
+        variant: "destructive",
+      });
+    }
+  };
+
+  // Add a new function to directly create a case from emergency data
+  const createCaseDirectly = async () => {
+    console.log("createCaseDirectly function called");
+    console.log("Selected Emergency:", selectedEmergency);
+    console.log("Emergency Diagnosis:", emergencyDiagnosis);
+    try {
+      // Set loading state
+      setIsCreatingCase(true);
+      
+      if (!selectedEmergency) {
+        toast({
+          title: "Error",
+          description: "No emergency selected.",
+          variant: "destructive",
+        });
         return;
       }
 
       const token = localStorage.getItem("welfareToken");
+      const walletAddress = localStorage.getItem("walletAddress");
+      
+      console.log("Token exists:", !!token);
+      console.log("Wallet address:", walletAddress);
+      
+      // Make wallet address optional
       if (!token) {
-        alert("Please log in to create a case");
-        router.push("/login");
+        toast({
+          title: "Authentication Error",
+          description: "Authentication token not found. Please login again.",
+          variant: "destructive",
+        });
+        return;
+      }
+      
+      // If wallet address is missing, use a placeholder
+      const effectiveWalletAddress = walletAddress || "0x0000000000000000000000000000000000000000";
+
+      // Only validate the doctor assignment since other fields have been removed
+      if (!emergencyDiagnosis.assignedDoctor) {
+        console.log("Validation failed: No doctor assigned");
+        toast({
+          title: "Missing Information",
+          description: "Please assign a doctor to this emergency case.",
+          variant: "destructive",
+        });
         return;
       }
 
-      const formData = new FormData();
-      formData.append("title", selectedEmergency.animalType + " Emergency Case");
-      formData.append("description", selectedEmergency.description);
-      formData.append("targetAmount", emergencyDiagnosis.estimatedCost);
-      formData.append("welfareAddress", walletAddress);
-      formData.append("medicalIssue", emergencyDiagnosis.medicalIssue);
-
-      // Only append assignedDoctor if it's a valid ObjectId
-      if (emergencyDiagnosis.assignedDoctor && /^[0-9a-fA-F]{24}$/.test(emergencyDiagnosis.assignedDoctor)) {
-        formData.append("assignedDoctor", emergencyDiagnosis.assignedDoctor);
-      }
-
-      // Append cost breakdown
-      formData.append("surgery", emergencyDiagnosis.estimatedCost);
-      formData.append("medicine", "0");
-      formData.append("recovery", "0");
-      formData.append("other", "0");
-
-      // If emergency has images, include them
-      if (selectedEmergency.images && selectedEmergency.images.length > 0) {
-        selectedEmergency.images.forEach(img => {
-          formData.append("images", img);
-        });
-      }
+      // Get the doctor ID from the emergencyDiagnosis state
+      const doctorId = emergencyDiagnosis.assignedDoctor;
 
       // Debug logging
-      console.log("Creating case with data:", {
-        title: formData.get("title"),
-        description: formData.get("description"),
-        targetAmount: formData.get("targetAmount"),
-        surgery: formData.get("surgery"),
-        medicine: formData.get("medicine"),
-        recovery: formData.get("recovery"),
-        other: formData.get("other"),
-        welfareAddress: formData.get("welfareAddress"),
-        assignedDoctor: formData.get("assignedDoctor"),
-        medicalIssue: formData.get("medicalIssue"),
-        images: selectedEmergency.images
-      });
+      console.log("Doctor ID:", doctorId);
+      console.log("Doctor ID type:", typeof doctorId);
+      console.log("Doctor ID valid:", doctorId && /^[0-9a-fA-F]{24}$/.test(doctorId));
+
+      // Prepare case data as JSON without default values for fields to be completed by the doctor
+      // Create case data with proper types for required fields
+      const caseData = {
+        isEmergency: true,
+        title: selectedEmergency.animalType + " Emergency Case",
+        description: selectedEmergency.description || "Emergency case created from report",
+        welfareAddress: effectiveWalletAddress,
+        animalType: selectedEmergency.animalType || "other",
+        assignedDoctor: doctorId,
+        status: "pending",
+        costBreakdown: null,
+        imageUrls: selectedEmergency.images || [],
+        emergencyId: selectedEmergency._id // Include the emergency ID for reference
+      };
+
+      console.log("Creating case with data:", caseData);
       
-      // Create the case
-      const response = await fetch("http://localhost:5001/api/welfare/cases", {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${token}`
-        },
-        body: formData
-      });
-      
-      if (!response.ok) {
-        const errorData = await response.json();
-        console.error("Server response:", errorData);
-        console.error("Response status:", response.status);
-        console.error("Response headers:", Object.fromEntries(response.headers.entries()));
-        throw new Error(`Failed to create case: ${response.status} ${response.statusText}`);
+      try {
+        // Make a direct JSON API call to convert emergency to case
+        console.log("Sending API request to emergency-to-case endpoint");
+        const response = await fetch("http://localhost:5001/api/welfare/emergency-to-case", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`
+          },
+          body: JSON.stringify(caseData)
+        });
+        
+        console.log("API response status:", response.status);
+        
+        // Get the response text first to see what's being returned
+        const responseText = await response.text();
+        console.log("API response text:", responseText);
+        
+        // Try to parse as JSON if possible
+        let responseData;
+        try {
+          responseData = JSON.parse(responseText);
+        } catch (e) {
+          console.error("Error parsing response as JSON:", e);
+        }
+        
+        if (!response.ok) {
+          console.error("Error creating case:", responseData || responseText);
+          toast({
+            title: "Error",
+            description: (responseData && responseData.message) || "Failed to create case. Please try again.",
+            variant: "destructive",
+          });
+          return;
+        }
+        
+        // If we got here, the response was successful
+        console.log("Case created successfully:", responseData);
+        
+        // Refresh emergencies list
+        getEmergencies();
+        
+        // Reset form and close modal
+        setEmergencyDiagnosis({
+          medicalIssue: "",
+          estimatedCost: "",
+          assignedDoctor: "",
+        });
+        setSelectedEmergency(null);
+        setShowEmergencyDetails(false);
+        
+        toast({
+          title: "Success",
+          description: "Case created successfully!",
+          variant: "default",
+        });
+      } catch (apiError) {
+        console.error("API call error:", apiError);
+        toast({
+          title: "API Error",
+          description: `Error calling API: ${apiError.message}`,
+          variant: "destructive",
+        });
+        return;
       }
+
+      // Refresh emergencies list
+      getEmergencies();
       
-      const result = await response.json();
-      console.log("Case created successfully:", result);
-      
-      // Update the emergency to mark it as resolved and link it to the new case
-      await updateEmergencyStatus(selectedEmergency._id, "Resolved", {
-        medicalIssue: emergencyDiagnosis.medicalIssue,
-        estimatedCost: Number(emergencyDiagnosis.estimatedCost),
-        treatmentPlan: `Converted to case: ${result._id}`
-      });
-      
-      // Update cases list
-      setCases([...cases, result]);
-      
-      // Close the modal and reset the selected emergency
-      setShowEmergencyDetails(false);
-      setSelectedEmergency(null);
+      // Reset form and close modal
       setEmergencyDiagnosis({
-        assignedDoctor: "",
         medicalIssue: "",
-        estimatedCost: ""
+        estimatedCost: "",
+        assignedDoctor: "",
       });
+      setSelectedEmergency(null);
+      setShowEmergencyDetails(false);
       
       toast({
         title: "Success",
         description: "Case created successfully!",
         variant: "default",
       });
-    } catch (error: unknown) {
+    } catch (error) {
       console.error("Error creating case:", error);
-      console.error("Error details:", {
-        message: error instanceof Error ? error.message : "Unknown error",
-        stack: error instanceof Error ? error.stack : undefined,
-        name: error instanceof Error ? error.name : undefined
-      });
       toast({
         title: "Error",
         description: `Failed to create case: ${error instanceof Error ? error.message : "Unknown error"}`,
         variant: "destructive",
       });
-    }
-  };
-
-  // Function to handle adding a new doctor
-  const handleAddDoctor = async (e: React.FormEvent<HTMLFormElement>) => {
-    e.preventDefault();
-    
-    const token = localStorage.getItem("welfareToken");
-    if (!token) {
-      console.error("No token found");
-      return;
-    }
-    
-    try {
-      // Get welfare ID from token
-      const tokenParts = token.split('.');
-      const payload = JSON.parse(atob(tokenParts[1]));
-      const welfareId = payload.id;
-
-      const response = await fetch("http://localhost:5001/api/doctor/register", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`
-        },
-        body: JSON.stringify({
-          ...newDoctor,
-          welfareId // Include the welfare organization's ID
-        })
-      });
-      
-      let responseData;
-      try {
-        // Try to parse the response as JSON first
-        responseData = await response.json();
-      } catch (e) {
-        // If JSON parsing fails, get the response as text
-        const errorText = await response.text();
-        throw new Error(errorText || 'Failed to add doctor');
-      }
-
-      if (!response.ok) {
-        // If we have a JSON error response, use its message
-        throw new Error(responseData.message || 'Failed to add doctor');
-      }
-      
-      console.log("Added new doctor:", responseData);
-      
-      // Add the new doctor to the list
-      setDoctors([...doctors, responseData]);
-      
-      // Reset form and close dialog
-      setNewDoctor({
-        name: "",
-        email: "",
-        password: "",
-        specialization: ""
-      });
-      setShowAddDoctor(false);
-    } catch (error) {
-      console.error("Error adding doctor:", error);
-      alert(error instanceof Error ? error.message : "Failed to add doctor. Please try again.");
+    } finally {
+      setIsCreatingCase(false);
     }
   };
   
@@ -1312,7 +1491,6 @@ export default function WelfareDashboard() {
       setNewDoctor({
         name: "",
         email: "",
-        password: "",
         specialization: ""
       });
       setSelectedDoctor(null);
@@ -1323,6 +1501,19 @@ export default function WelfareDashboard() {
     }
   };
   
+  // Function to handle viewing case details
+  const handleViewCase = async (caseId: string) => {
+    // Fetch the latest case data before navigating
+    await fetchCaseById(caseId);
+    router.push(`/welfare/cases/${caseId}`);
+  };
+  
+  // Function to refresh cases periodically
+  const refreshCases = useCallback(async () => {
+    console.log('Refreshing cases with latest data...');
+    await fetchCases();
+  }, [fetchCases]);
+
   // Function to handle deleting a doctor
   const handleDeleteDoctor = async (doctorId: string) => {
     if (!confirm("Are you sure you want to delete this doctor?")) {
@@ -1331,6 +1522,7 @@ export default function WelfareDashboard() {
     
     const token = localStorage.getItem("welfareToken");
     if (!token) {
+
       console.error("No token found");
       return;
     }
@@ -1358,13 +1550,125 @@ export default function WelfareDashboard() {
     }
   };
   
+  // Function to handle adding a new doctor with temporary password
+  const handleAddDoctor = async (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    
+    const token = localStorage.getItem("welfareToken");
+    if (!token) {
+      console.error("No token found");
+      toast({
+        title: "Error",
+        description: "Authentication token not found. Please log in again.",
+        variant: "destructive",
+      });
+      router.push("/welfare/login");
+      return;
+    }
+    
+    try {
+      // Check if token is expired by decoding it
+      const tokenParts = token.split('.');
+      let welfareId = null;
+      let isTokenExpired = false;
+      
+      if (tokenParts.length === 3) {
+        try {
+          const payload = JSON.parse(atob(tokenParts[1]));
+          welfareId = payload.id || payload._id || payload.userId;
+          
+          // Check token expiration
+          if (payload.exp) {
+            const expirationTime = payload.exp * 1000; // Convert to milliseconds
+            isTokenExpired = Date.now() >= expirationTime;
+          }
+        } catch (e) {
+          console.error("Error parsing token:", e);
+          isTokenExpired = true;
+        }
+      }
+      
+      if (isTokenExpired) {
+        localStorage.removeItem("welfareToken");
+        toast({
+          title: "Session Expired",
+          description: "Your session has expired. Please log in again.",
+          variant: "destructive",
+        });
+        router.push("/welfare/login");
+        return;
+      }
+      
+      if (!welfareId) {
+        throw new Error("Could not extract welfare ID from token");
+      }
+      
+      // Make API request to register doctor
+      const response = await fetch("http://localhost:5001/api/doctor/register-with-temp-password", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          name: newDoctor.name,
+          email: newDoctor.email,
+          specialization: newDoctor.specialization,
+          welfareId: welfareId
+        })
+      });
+      
+      if (response.status === 401) {
+        // Token is invalid or expired
+        localStorage.removeItem("welfareToken");
+        toast({
+          title: "Session Expired",
+          description: "Your session has expired. Please log in again.",
+          variant: "destructive",
+        });
+        router.push("/welfare/login");
+        return;
+      }
+      
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.message || "Failed to register doctor");
+      }
+      
+      const data = await response.json();
+      
+      // Add the new doctor to the list
+      setDoctors([...doctors, data.doctor]);
+      
+      // Reset form and close dialog
+      setNewDoctor({
+        name: "",
+        email: "",
+        specialization: ""
+      });
+      setShowAddDoctor(false);
+      
+      toast({
+        title: "Success",
+        description: "Doctor registered successfully. A temporary password has been sent to their email.",
+        variant: "default",
+      });
+    } catch (error) {
+      console.error("Error registering doctor:", error);
+      toast({
+        title: "Error",
+        description: error instanceof Error ? error.message : "Failed to register doctor",
+        variant: "destructive",
+      });
+    }
+  };
+  
   // Function to open the edit doctor dialog
   const openEditDoctor = (doctor: Doctor) => {
     setSelectedDoctor(doctor);
     setNewDoctor({
       name: doctor.name,
       email: doctor.email,
-      password: "", // Don't include the current password
       specialization: doctor.specialization
     });
     setShowEditDoctor(true);
@@ -1700,48 +2004,98 @@ export default function WelfareDashboard() {
     }
   }, [router]);
 
-  // Add useEffect for fetching dashboard data
-  useEffect(() => {
-    const fetchDashboardData = async () => {
+  // Add state for loading dashboard data
+  const [loadingDashboardData, setLoadingDashboardData] = useState(false);
+
+  // Create a separate fetchDashboardData function using useCallback for proper dependency management
+  const fetchDashboardData = useCallback(async () => {
+    // Set loading state
+    setLoadingDashboardData(true);
+    
+    try {
       const token = localStorage.getItem("welfareToken");
       if (!token) {
         console.error("No token found");
+        setLoadingDashboardData(false);
         return;
       }
 
-      try {
-        // Fetch donations data
-        const donationsResponse = await fetch("http://localhost:5001/api/welfare/donations", {
-          headers: {
-            Authorization: `Bearer ${token}`
-          }
-        });
+      console.log("Fetching dashboard data...");
+      // Fetch donations data with cache: 'no-store' to ensure fresh data
+      const donationsResponse = await fetch("http://localhost:5001/api/welfare/donations", {
+        method: 'GET',
+        headers: {
+          'Authorization': `Bearer ${token}`
+        },
+        cache: 'no-store'
+      });
 
-        if (!donationsResponse.ok) {
-          throw new Error('Failed to fetch donations data');
-        }
-
-        const donationsData = await donationsResponse.json();
-        setDonations(donationsData.stats);
-        setDonorsCount({
-          total: donationsData.stats.uniqueDonors,
-          thisMonth: donationsData.stats.newDonorsThisMonth,
-          percentChange: donationsData.stats.donorPercentChange
-        });
-        setDashboardCharts({
-          donationsByMonth: donationsData.charts.byMonth,
-          casePerformance: donationsData.charts.byCase
-        });
-      } catch (error) {
-        console.error('Error fetching dashboard data:', error);
+      if (!donationsResponse.ok) {
+        throw new Error('Failed to fetch donations data');
       }
-    };
 
-    // Only fetch dashboard data when on dashboard tab
-    if (activeTab === 'dashboard') {
+      const donationsData = await donationsResponse.json();
+      console.log("Dashboard data received:", donationsData);
+      
+      // Update state with the fetched data
+      setDonations({
+        ...donationsData.stats,
+        items: donationsData.donations || [] // Make sure to update the donations list
+      });
+      
+      // Update donor count stats
+      setDonorsCount({
+        total: donationsData.stats.uniqueDonors,
+        thisMonth: donationsData.stats.newDonorsThisMonth,
+        percentChange: donationsData.stats.donorPercentChange
+      });
+      
+      // Update chart data
+      setDashboardCharts({
+        donationsByMonth: donationsData.charts.byMonth,
+        casePerformance: donationsData.charts.byCase
+      });
+      
+      console.log("Updated donations state with items:", donationsData.donations?.length || 0, "donations");
+    } catch (error) {
+      console.error('Error fetching dashboard data:', error);
+      toast({
+        title: "Error",
+        description: "Failed to load dashboard data. Please try again.",
+        variant: "destructive",
+      });
+    } finally {
+      // Clear loading state
+      setLoadingDashboardData(false);
+    }
+  }, [toast]);
+
+  // Add useEffect to fetch data on initial load and set up polling
+  useEffect(() => {
+    // Fetch data immediately when the component mounts if the token exists
+    if (welfareToken) {
+      fetchDashboardData();
+      
+      // Set up polling for dashboard data (every 30 seconds)
+      const pollingInterval = setInterval(() => {
+        // Only poll when dashboard tab is active
+        if (activeTab === 'dashboard') {
+          console.log('Polling dashboard data...');
+          fetchDashboardData();
+        }
+      }, 30000); // 30 seconds
+      
+      // Clean up interval on unmount
+      return () => clearInterval(pollingInterval);
+    }
+  }, [welfareToken, fetchDashboardData, activeTab]); // Include all dependencies
+  
+  // Add useEffect to refetch data when tab changes to dashboard
+  useEffect(() => {
+    if (activeTab === 'dashboard' && welfareToken) {
       fetchDashboardData();
     }
-  }, [activeTab]);
+  }, [activeTab, welfareToken, fetchDashboardData]);
 
   // Add useEffect for fetching blockchain data
   useEffect(() => {
@@ -2168,29 +2522,7 @@ export default function WelfareDashboard() {
               {isSidebarOpen && <span className="ml-3">Updates</span>}
             </button>
 
-            <button
-              onClick={() => setActiveTab("reports")}
-              className={`flex items-center w-full p-2 rounded-md ${activeTab === "reports" ? "bg-purple-600 text-white" : "hover:bg-gray-700 text-gray-300"}`}
-            >
-              <FileBarChart className="h-5 w-5" />
-              {isSidebarOpen && <span className="ml-3">Reports</span>}
-            </button>
-
-            <button
-              onClick={() => setActiveTab("analytics")}
-              className={`flex items-center w-full p-2 rounded-md ${activeTab === "analytics" ? "bg-purple-600 text-white" : "hover:bg-gray-700 text-gray-300"}`}
-            >
-              <PieChartIcon className="h-5 w-5" />
-              {isSidebarOpen && <span className="ml-3">Analytics</span>}
-            </button>
-
-            <button
-              onClick={() => setActiveTab("settings")}
-              className={`flex items-center w-full p-2 rounded-md ${activeTab === "settings" ? "bg-purple-600 text-white" : "hover:bg-gray-700 text-gray-300"}`}
-            >
-              <Settings className="h-5 w-5" />
-              {isSidebarOpen && <span className="ml-3">Settings</span>}
-            </button>
+            {/* Reports, Analytics, and Settings tabs removed */}
 
             <button
               onClick={() => {
@@ -2260,185 +2592,218 @@ export default function WelfareDashboard() {
           {/* Dashboard Tab */}
           {activeTab === "dashboard" && (
             <div className="space-y-6">
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                <div className="bg-gray-800 rounded-lg shadow p-6 border border-gray-700">
-                  <h3 className="text-gray-400 text-sm font-medium mb-2">Total Donations</h3>
-                    <p className="text-3xl font-bold text-white">
-                      ${donations?.totalUsd?.toLocaleString(undefined, {maximumFractionDigits: 2}) || "0.00"}
-                    </p>
-                    <div className={`flex items-center text-sm mt-2 ${(donations?.percentChange || 0) >= 0 ? 'text-green-500' : 'text-red-500'}`}>
-                    <svg
-                      className="w-4 h-4 mr-1"
-                      fill="none"
-                      stroke="currentColor"
-                      viewBox="0 0 24 24"
-                      xmlns="http://www.w3.org/2000/svg"
-                    >
-                      <path
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        strokeWidth="2"
-                          d={(donations?.percentChange || 0) >= 0 ? "M5 10l7-7m0 0l7 7m-7-7v18" : "M19 14l-7 7m0 0l-7-7m7 7V3"}
-                      ></path>
-                    </svg>
-                      <span>{Math.abs(donations?.percentChange || 0)}% from last month</span>
-                  </div>
-                </div>
-
-                <div className="bg-gray-800 rounded-lg shadow p-6 border border-gray-700">
-                  <h3 className="text-gray-400 text-sm font-medium mb-2">Active Cases</h3>
-                    <p className="text-3xl font-bold text-white">{cases?.length || 0}</p>
-                  <div className="flex items-center text-green-500 text-sm mt-2">
-                    <svg
-                      className="w-4 h-4 mr-1"
-                      fill="none"
-                      stroke="currentColor"
-                      viewBox="0 0 24 24"
-                      xmlns="http://www.w3.org/2000/svg"
-                    >
-                      <path
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        strokeWidth="2"
-                        d="M5 10l7-7m0 0l7 7m-7-7v18"
-                      ></path>
-                    </svg>
-                      <span>{cases?.filter(c => new Date(c.createdAt) > new Date(Date.now() - 30 * 24 * 60 * 60 * 1000))?.length || 0} new this month</span>
-                  </div>
-                </div>
-
-                <div className="bg-gray-800 rounded-lg shadow p-6 border border-gray-700">
-                  <h3 className="text-gray-400 text-sm font-medium mb-2">Total Donors</h3>
-                    <p className="text-3xl font-bold text-white">{donorsCount?.total || 0}</p>
-                    <div className={`flex items-center text-sm mt-2 ${(donorsCount?.percentChange || 0) >= 0 ? 'text-green-500' : 'text-red-500'}`}>
-                    <svg
-                      className="w-4 h-4 mr-1"
-                      fill="none"
-                      stroke="currentColor"
-                      viewBox="0 0 24 24"
-                      xmlns="http://www.w3.org/2000/svg"
-                    >
-                      <path
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        strokeWidth="2"
-                          d={(donorsCount?.percentChange || 0) >= 0 ? "M5 10l7-7m0 0l7 7m-7-7v18" : "M19 14l-7 7m0 0l-7-7m7 7V3"}
-                      ></path>
-                    </svg>
-                      <span>{donorsCount?.thisMonth || 0} new this month</span>
-                  </div>
-                </div>
+              {/* Dashboard Header with Refresh Button */}
+              <div className="flex justify-between items-center">
+                <h2 className="text-xl font-semibold text-white">Welfare Dashboard</h2>
+                <button
+                  onClick={fetchDashboardData}
+                  disabled={loadingDashboardData}
+                  className="flex items-center bg-purple-600 hover:bg-purple-700 text-white px-3 py-2 rounded-md transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  <RefreshCw className="h-4 w-4 mr-2" />
+                  {loadingDashboardData ? 'Refreshing...' : 'Refresh Data'}
+                </button>
               </div>
-
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                <div className="bg-gray-800 rounded-lg shadow p-6 border border-gray-700">
-                  <h3 className="text-lg font-medium mb-4 text-white">Donation Trends</h3>
-                  <div className="h-80">
-                    <ResponsiveContainer width="100%" height="100%">
-                        <LineChart data={dashboardCharts?.donationsByMonth || []}>
-                        <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
-                        <XAxis dataKey="month" stroke="#9CA3AF" />
-                        <YAxis stroke="#9CA3AF" />
-                        <Tooltip contentStyle={{ backgroundColor: "#1F2937", borderColor: "#374151" }} />
-                        <Legend />
-                        <Line type="monotone" dataKey="amount" stroke="#8B5CF6" activeDot={{ r: 8 }} />
-                      </LineChart>
-                    </ResponsiveContainer>
-                  </div>
+              {loadingDashboardData ? (
+                <div className="flex flex-col items-center justify-center py-12">
+                  <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-purple-500 mb-4"></div>
+                  <p className="text-gray-400">Loading dashboard data...</p>
                 </div>
+              ) : (
+                <>
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                    <div className="bg-gray-800 rounded-lg shadow p-6 border border-gray-700">
+                      <h3 className="text-gray-400 text-sm font-medium mb-2">Total Donations</h3>
+                      <p className="text-3xl font-bold text-white">
+                        ${donations?.totalUsd?.toLocaleString(undefined, {maximumFractionDigits: 2}) || "0.00"}
+                      </p>
+                      <div className={`flex items-center text-sm mt-2 ${(donations?.percentChange || 0) >= 0 ? 'text-green-500' : 'text-red-500'}`}>
+                        <svg
+                          className="w-4 h-4 mr-1"
+                          fill="none"
+                          stroke="currentColor"
+                          viewBox="0 0 24 24"
+                          xmlns="http://www.w3.org/2000/svg"
+                        >
+                          <path
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            strokeWidth="2"
+                            d={(donations?.percentChange || 0) >= 0 ? "M5 10l7-7m0 0l7 7m-7-7v18" : "M19 14l-7 7m0 0l-7-7m7 7V3"}
+                          ></path>
+                        </svg>
+                        <span>{Math.abs(donations?.percentChange || 0)}% from last month</span>
+                      </div>
+                    </div>
 
-                <div className="bg-gray-800 rounded-lg shadow p-6 border border-gray-700">
-                  <h3 className="text-lg font-medium mb-4 text-white">Case Performance</h3>
-                  <div className="h-80">
-                    <ResponsiveContainer width="100%" height="100%">
-                        <BarChart data={dashboardCharts?.casePerformance || []}>
-                        <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
-                        <XAxis dataKey="name" stroke="#9CA3AF" />
-                        <YAxis stroke="#9CA3AF" />
-                        <Tooltip contentStyle={{ backgroundColor: "#1F2937", borderColor: "#374151" }} />
-                        <Legend />
-                        <Bar dataKey="donations" fill="#10B981" />
-                      </BarChart>
-                    </ResponsiveContainer>
+                    <div className="bg-gray-800 rounded-lg shadow p-6 border border-gray-700">
+                      <h3 className="text-gray-400 text-sm font-medium mb-2">Active Cases</h3>
+                      <p className="text-3xl font-bold text-white">{cases?.length || 0}</p>
+                      <div className="flex items-center text-green-500 text-sm mt-2">
+                        <svg
+                          className="w-4 h-4 mr-1"
+                          fill="none"
+                          stroke="currentColor"
+                          viewBox="0 0 24 24"
+                          xmlns="http://www.w3.org/2000/svg"
+                        >
+                          <path
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            strokeWidth="2"
+                            d="M5 10l7-7m0 0l7 7m-7-7v18"
+                          ></path>
+                        </svg>
+                        <span>{cases?.filter(c => new Date(c.createdAt) > new Date(Date.now() - 30 * 24 * 60 * 60 * 1000))?.length || 0} new this month</span>
+                      </div>
+                    </div>
+
+                    <div className="bg-gray-800 rounded-lg shadow p-6 border border-gray-700">
+                      <h3 className="text-gray-400 text-sm font-medium mb-2">Total Donors</h3>
+                      <p className="text-3xl font-bold text-white">{donorsCount?.total || 0}</p>
+                      <div className={`flex items-center text-sm mt-2 ${(donorsCount?.percentChange || 0) >= 0 ? 'text-green-500' : 'text-red-500'}`}>
+                        <svg
+                          className="w-4 h-4 mr-1"
+                          fill="none"
+                          stroke="currentColor"
+                          viewBox="0 0 24 24"
+                          xmlns="http://www.w3.org/2000/svg"
+                        >
+                          <path
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            strokeWidth="2"
+                            d={(donorsCount?.percentChange || 0) >= 0 ? "M5 10l7-7m0 0l7 7m-7-7v18" : "M19 14l-7 7m0 0l-7-7m7 7V3"}
+                          ></path>
+                        </svg>
+                        <span>{donorsCount?.thisMonth || 0} new this month</span>
+                      </div>
+                    </div>
                   </div>
-                </div>
-              </div>
 
-              <div className="bg-gray-800 rounded-lg shadow p-6 border border-gray-700">
-                <h3 className="text-lg font-medium mb-4 text-white">Recent Donations</h3>
-                <div className="overflow-x-auto">
-                  <table className="min-w-full divide-y divide-gray-700">
-                    <thead className="bg-gray-700">
-                      <tr>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">
-                          Donor
-                        </th>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">
-                          Case
-                        </th>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">
-                          Amount
-                        </th>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">
-                          Date
-                        </th>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">
-                          Transaction
-                        </th>
-                      </tr>
-                    </thead>
-                    <tbody className="bg-gray-800 divide-y divide-gray-700">
-                        {donations?.items && donations.items.length > 0 ? (
-                          donations.items.slice(0, 5).map((donation) => (
-                            <tr key={donation._id}>
-                              <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-300">{donation.donor}</td>
-                              <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-300">{donation.caseTitle}</td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-300">
-                          <div className="flex items-center">
-                                  <span className="text-purple-400 mr-1">{donation.amount} ETH</span>
-                                  <span className="text-gray-500 text-xs">(${donation.amountUsd})</span>
-                          </div>
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-300">
-                                {new Date(donation.date).toLocaleDateString()}
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-300">
-                          <a
-                                  href={`https://explorer.zksync.io/tx/${donation.transactionHash}`}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="text-purple-400 hover:text-purple-300 flex items-center"
-                          >
-                            View <ExternalLink size={12} className="ml-1" />
-                          </a>
-                        </td>
-                      </tr>
-                          ))
-                        ) : (
+                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                    <div className="bg-gray-800 rounded-lg shadow p-6 border border-gray-700">
+                      <h3 className="text-lg font-medium mb-4 text-white">Donation Trends</h3>
+                      <div className="h-80">
+                        <ResponsiveContainer width="100%" height="100%">
+                          <LineChart data={dashboardCharts?.donationsByMonth || []}>
+                            <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
+                            <XAxis dataKey="month" stroke="#9CA3AF" />
+                            <YAxis stroke="#9CA3AF" />
+                            <Tooltip contentStyle={{ backgroundColor: "#1F2937", borderColor: "#374151" }} />
+                            <Legend />
+                            <Line type="monotone" dataKey="amount" stroke="#8B5CF6" activeDot={{ r: 8 }} />
+                          </LineChart>
+                        </ResponsiveContainer>
+                      </div>
+                    </div>
+
+                    <div className="bg-gray-800 rounded-lg shadow p-6 border border-gray-700">
+                      <h3 className="text-lg font-medium mb-4 text-white">Case Performance</h3>
+                      <div className="h-80">
+                        <ResponsiveContainer width="100%" height="100%">
+                          <BarChart data={dashboardCharts?.casePerformance || []}>
+                            <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
+                            <XAxis dataKey="name" stroke="#9CA3AF" />
+                            <YAxis stroke="#9CA3AF" />
+                            <Tooltip contentStyle={{ backgroundColor: "#1F2937", borderColor: "#374151" }} />
+                            <Legend />
+                            <Bar dataKey="donations" fill="#10B981" />
+                          </BarChart>
+                        </ResponsiveContainer>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="bg-gray-800 rounded-lg shadow p-6 border border-gray-700">
+                    <h3 className="text-lg font-medium mb-4 text-white">Recent Donations</h3>
+                    <div className="overflow-x-auto">
+                      <table className="min-w-full divide-y divide-gray-700">
+                        <thead className="bg-gray-700">
                           <tr>
-                            <td colSpan={5} className="px-6 py-8 text-center text-gray-400">
-                              No donations received yet.
-                        </td>
-                      </tr>
-                        )}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
+                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">
+                              Donor
+                            </th>
+                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">
+                              Case
+                            </th>
+                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">
+                              Amount
+                            </th>
+                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">
+                              Date
+                            </th>
+                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">
+                              Transaction
+                            </th>
+                          </tr>
+                        </thead>
+                        <tbody className="bg-gray-800 divide-y divide-gray-700">
+                          {donations?.items && donations.items.length > 0 ? (
+                            donations.items.slice(0, 5).map((donation) => (
+                              <tr key={donation._id}>
+                                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-300">{donation.donor}</td>
+                                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-300">{donation.caseTitle}</td>
+                                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-300">
+                                  <div className="flex items-center">
+                                    <span className="text-purple-400 mr-1">{donation.amount} ETH</span>
+                                    <span className="text-gray-500 text-xs">(${donation.amountUsd})</span>
+                                  </div>
+                                </td>
+                                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-300">
+                                  {new Date(donation.date).toLocaleDateString()}
+                                </td>
+                                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-300">
+                                  <a
+                                    href={`https://explorer.zksync.io/tx/${donation.transactionHash}`}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="text-purple-400 hover:text-purple-300 flex items-center"
+                                  >
+                                    View <ExternalLink size={12} className="ml-1" />
+                                  </a>
+                                </td>
+                              </tr>
+                            ))
+                          ) : (
+                            <tr>
+                              <td colSpan={5} className="px-6 py-8 text-center text-gray-400">
+                                No donations received yet.
+                              </td>
+                            </tr>
+                          )}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                </>
+              )}
             </div>
           )}
 
           {/* Cases Tab */}
           {activeTab === "cases" && (
             <div className="space-y-6">
-              <div className="flex justify-between items-center">
-                <h2 className="text-xl font-semibold text-white">Donation Cases</h2>
-                <button
+              <div className="flex justify-between items-center mb-4">
+                <div className="flex items-center space-x-2">
+                  <h2 className="text-xl font-semibold text-white">Donation Cases</h2>
+                  <Button
+                    onClick={refreshCases}
+                    variant="ghost"
+                    size="sm"
+                    className="text-gray-400 hover:text-white"
+                    title="Refresh cases"
+                  >
+                    <RefreshCw className="h-4 w-4" />
+                  </Button>
+                </div>
+                <Button
                   onClick={() => setShowAddCase(true)}
-                  className="bg-purple-600 text-white px-4 py-2 rounded-md flex items-center hover:bg-purple-700 transition-colors"
+                  className="bg-purple-600 hover:bg-purple-700 text-white"
                 >
-                  <Plus className="h-4 w-4 mr-2" /> Add New Case
-                </button>
+                  <Plus className="h-4 w-4 mr-2" />
+                  Add New Case
+                </Button>
               </div>
 
               {showAddCase && (
@@ -2466,16 +2831,7 @@ export default function WelfareDashboard() {
                       ></textarea>
                     </div>
 
-                    <div>
-                      <label className="block text-sm font-medium text-gray-300 mb-1">Target Amount ($)</label>
-                      <input
-                        type="number"
-                        value={newCase.targetAmount}
-                        onChange={(e) => setNewCase({ ...newCase, targetAmount: e.target.value })}
-                        className="w-full p-2 bg-gray-700 border border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-purple-500 text-white"
-                        required
-                      />
-                    </div>
+                    {/* Target Amount removed - will be added by doctor */}
 
                     <div>
                       <label className="block text-sm font-medium text-gray-300 mb-1">Assigned Doctor</label>
@@ -2493,62 +2849,26 @@ export default function WelfareDashboard() {
                       </select>
                     </div>
 
-                    <div>
-                      <label className="block text-sm font-medium text-gray-300 mb-1">Medical Issue</label>
-                      <textarea
-                        value={newCase.medicalIssue}
-                        onChange={(e) => setNewCase({ ...newCase, medicalIssue: e.target.value })}
-                        className="w-full p-2 bg-gray-700 border border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-purple-500 text-white"
-                        rows={3}
-                        placeholder="Describe the medical issue or diagnosis (optional)"
-                      ></textarea>
-                    </div>
+                    {/* Medical Issue removed - will be added by doctor */}
 
                     <div>
-                      <label className="block text-sm font-medium text-gray-300 mb-1">Cost Breakdown</label>
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        <div>
-                          <label className="block text-xs text-gray-400 mb-1">Surgery ($)</label>
-                          <input
-                            type="number"
-                            name="surgery"
-                            value={newCase.costBreakdown.surgery}
-                            onChange={handleCostBreakdownChange}
-                            className="w-full p-2 bg-gray-700 border border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-purple-500 text-white"
-                          />
-                        </div>
-                        <div>
-                          <label className="block text-xs text-gray-400 mb-1">Medicine ($)</label>
-                          <input
-                            type="number"
-                            name="medicine"
-                            value={newCase.costBreakdown.medicine}
-                            onChange={handleCostBreakdownChange}
-                            className="w-full p-2 bg-gray-700 border border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-purple-500 text-white"
-                          />
-                        </div>
-                        <div>
-                          <label className="block text-xs text-gray-400 mb-1">Recovery ($)</label>
-                          <input
-                            type="number"
-                            name="recovery"
-                            value={newCase.costBreakdown.recovery}
-                            onChange={handleCostBreakdownChange}
-                            className="w-full p-2 bg-gray-700 border border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-purple-500 text-white"
-                          />
-                        </div>
-                        <div>
-                          <label className="block text-xs text-gray-400 mb-1">Other ($)</label>
-                          <input
-                            type="number"
-                            name="other"
-                            value={newCase.costBreakdown.other}
-                            onChange={handleCostBreakdownChange}
-                            className="w-full p-2 bg-gray-700 border border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-purple-500 text-white"
-                          />
-                        </div>
-                      </div>
+                      <label className="block text-sm font-medium text-gray-300 mb-1">Animal Type</label>
+                      <select
+                        value={newCase.animalType}
+                        onChange={(e) => setNewCase({ ...newCase, animalType: e.target.value })}
+                        className="w-full p-2 bg-gray-700 border border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-purple-500 text-white"
+                        required
+                      >
+                        <option value="dog">Dog</option>
+                        <option value="cat">Cat</option>
+                        <option value="donkey">Donkey</option>
+                        <option value="cow">Cow</option>
+                        <option value="goat">Goat</option>
+                        <option value="other">Other</option>
+                      </select>
                     </div>
+
+                    {/* Cost Breakdown removed - will be added by doctor */}
 
                     <div>
                       <label className="block text-sm font-medium text-gray-300 mb-1">Images</label>
@@ -2579,6 +2899,151 @@ export default function WelfareDashboard() {
                   </form>
                 </div>
               )}
+              
+              {/* Edit Case Modal */}
+              {showEditCase && (
+                <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-20 p-4">
+                  <div className="bg-gray-800 rounded-lg shadow-lg p-6 max-w-2xl w-full border border-gray-700 overflow-y-auto max-h-[90vh]">
+                    <div className="flex justify-between items-start mb-4">
+                      <h3 className="text-lg font-medium text-white">Edit Donation Case</h3>
+                      <button
+                        onClick={() => setShowEditCase(false)}
+                        className="text-gray-400 hover:text-gray-300"
+                      >
+                        <X className="h-5 w-5" />
+                      </button>
+                    </div>
+                    
+                    <form onSubmit={handleUpdateCase} className="space-y-4">
+                      <div>
+                        <label className="block text-sm font-medium text-gray-300 mb-1">Title</label>
+                        <input
+                          type="text"
+                          value={editingCase.title}
+                          onChange={(e) => setEditingCase({ ...editingCase, title: e.target.value })}
+                          className="w-full p-2 bg-gray-700 border border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-purple-500 text-white"
+                          required
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-sm font-medium text-gray-300 mb-1">Description</label>
+                        <textarea
+                          value={editingCase.description}
+                          onChange={(e) => setEditingCase({ ...editingCase, description: e.target.value })}
+                          className="w-full p-2 bg-gray-700 border border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-purple-500 text-white min-h-[100px]"
+                          required
+                        ></textarea>
+                      </div>
+
+                      <div>
+                        <label className="block text-sm font-medium text-gray-300 mb-1">Target Amount ($)</label>
+                        <input
+                          type="number"
+                          value={editingCase.targetAmount}
+                          onChange={(e) => setEditingCase({ ...editingCase, targetAmount: e.target.value })}
+                          className="w-full p-2 bg-gray-700 border border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-purple-500 text-white"
+                          required
+                        />
+                      </div>
+                      
+                      <div>
+                        <label className="block text-sm font-medium text-gray-300 mb-1">Category</label>
+                        <select
+                          value={editingCase.category}
+                          onChange={(e) => setEditingCase({ ...editingCase, category: e.target.value })}
+                          className="w-full p-2 bg-gray-700 border border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-purple-500 text-white"
+                        >
+                          <option value="medical">Medical</option>
+                          <option value="food">Food</option>
+                          <option value="shelter">Shelter</option>
+                          <option value="rescue">Rescue</option>
+                          <option value="other">Other</option>
+                        </select>
+                      </div>
+                      
+                      <div>
+                        <label className="block text-sm font-medium text-gray-300 mb-1">Current Image</label>
+                        {editingCase.currentImageUrl ? (
+                          <div className="h-40 w-full bg-gray-700 relative rounded-md overflow-hidden mb-2">
+                            <Image
+                              src={
+                                Array.isArray(editingCase.currentImageUrl) && editingCase.currentImageUrl.length > 0
+                                  ? (editingCase.currentImageUrl[0].startsWith('http') 
+                                      ? editingCase.currentImageUrl[0] 
+                                      : `http://localhost:5001/uploads/${editingCase.currentImageUrl[0]}`)
+                                  : (typeof editingCase.currentImageUrl === 'string'
+                                      ? (editingCase.currentImageUrl.startsWith('http')
+                                          ? editingCase.currentImageUrl
+                                          : `http://localhost:5001/uploads/${editingCase.currentImageUrl}`)
+                                      : "/images/placeholder-case.jpg")
+                              }
+                              alt="Current case image"
+                              fill
+                              style={{ objectFit: "cover" }}
+                            />
+                          </div>
+                        ) : (
+                          <div className="h-40 w-full bg-gray-700 flex items-center justify-center text-gray-400 rounded-md mb-2">
+                            No image available
+                          </div>
+                        )}
+                        
+                        <label className="block text-sm font-medium text-gray-300 mb-1 mt-4">Update Image (Optional)</label>
+                        <input
+                          type="file"
+                          accept="image/jpeg, image/png, image/jpg"
+                          onChange={(e) => {
+                            const file = e.target.files?.[0] || null;
+                            if (file) {
+                              const reader = new FileReader();
+                              reader.onloadend = () => {
+                                setEditingCase({
+                                  ...editingCase,
+                                  imageFile: file,
+                                  imagePreview: reader.result as string
+                                });
+                              };
+                              reader.readAsDataURL(file);
+                            }
+                          }}
+                          className="w-full p-2 bg-gray-700 border border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-purple-500 text-white"
+                        />
+                        
+                        {editingCase.imagePreview && (
+                          <div className="mt-2 h-40 w-full bg-gray-700 relative rounded-md overflow-hidden">
+                            <Image
+                              src={editingCase.imagePreview}
+                              alt="New image preview"
+                              fill
+                              style={{ objectFit: "cover" }}
+                            />
+                            <div className="absolute top-2 right-2 bg-gray-800 rounded-full p-1">
+                              <span className="text-xs text-white px-2">New Image</span>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                      
+                      <div className="flex justify-end space-x-3 pt-4">
+                        <button
+                          type="button"
+                          onClick={() => setShowEditCase(false)}
+                          className="px-4 py-2 bg-gray-700 text-white rounded-md hover:bg-gray-600 transition-colors"
+                        >
+                          Cancel
+                        </button>
+                        <button
+                          type="submit"
+                          className="px-4 py-2 bg-purple-600 text-white rounded-md hover:bg-purple-700 transition-colors flex items-center"
+                        >
+                          <Save className="h-4 w-4 mr-2" /> Save Changes
+                        </button>
+                      </div>
+                    </form>
+                  </div>
+                </div>
+              )}
 
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                 {Array.isArray(cases) && cases.length > 0 ? (
@@ -2587,7 +3052,17 @@ export default function WelfareDashboard() {
                       <div className="h-48 bg-gray-700 relative">
                         {c.imageUrl ? (
                           <Image
-                            src={`http://localhost:5001/uploads/${c.imageUrl}`}
+                            src={
+                              Array.isArray(c.imageUrl) && c.imageUrl.length > 0
+                                ? (c.imageUrl[0].startsWith('http') 
+                                    ? c.imageUrl[0] 
+                                    : `http://localhost:5001/uploads/${c.imageUrl[0]}`)
+                                : (typeof c.imageUrl === 'string'
+                                    ? (c.imageUrl.startsWith('http')
+                                        ? c.imageUrl
+                                        : `http://localhost:5001/uploads/${c.imageUrl}`)
+                                    : "/images/placeholder-case.jpg")
+                            }
                             alt={c.title}
                             fill
                             style={{ objectFit: "cover" }}
@@ -2597,7 +3072,21 @@ export default function WelfareDashboard() {
                         )}
                       </div>
                       <div className="p-4">
-                        <h3 className="font-semibold text-lg mb-2 text-white">{c.title}</h3>
+                        <div className="flex justify-between items-center mb-2">
+                          <h3 className="font-semibold text-lg text-white">{c.title}</h3>
+                          <div className="flex space-x-2">
+                            {c.isUrgent && (
+                              <span className="px-2 py-1 bg-red-900/30 text-red-400 text-xs font-medium rounded-full border border-red-700/50">
+                                URGENT
+                              </span>
+                            )}
+                            {c.status === "completed" && (
+                              <span className="px-2 py-1 bg-green-900/30 text-green-400 text-xs font-medium rounded-full border border-green-700/50">
+                                Completed
+                              </span>
+                            )}
+                          </div>
+                        </div>
                         <p className="text-gray-400 text-sm mb-4 line-clamp-3">{c.description}</p>
 
                         {c.assignedDoctor && (
@@ -2611,20 +3100,79 @@ export default function WelfareDashboard() {
                                 <span className="font-medium">Doctor's Note:</span> {c.medicalIssue}
                               </p>
                             )}
+                            
+                            {/* Display cost breakdown if available */}
+                            {c.costBreakdown && Array.isArray(c.costBreakdown) && c.costBreakdown.length > 0 && (
+                              <div className="mt-2 space-y-1">
+                                <p className="text-xs text-gray-300">
+                                  <span className="font-medium">Cost Breakdown:</span>
+                                </p>
+                                <div className="grid grid-cols-2 gap-1 text-xs">
+                                  {c.costBreakdown.map((item, index) => (
+                                    <p key={index} className="text-gray-300">
+                                      {item.item}: <span className="text-white">${parseFloat(item.cost).toFixed(2)}</span>
+                                    </p>
+                                  ))}
+                                </div>
+                              </div>
+                            )}
                           </div>
                         )}
+                        
+                        {/* Progress bar for amount raised */}
+                        <div className="mb-3">
+                          <div className="flex justify-between text-xs mb-1">
+                            <span className="text-gray-400">Raised: ${c.amountRaised || '0'}</span>
+                            <span className="text-gray-400">
+                              Target: ${(() => {
+                                if (Array.isArray(c.costBreakdown) && c.costBreakdown.length > 0) {
+                                  return c.costBreakdown.reduce((total, item) => total + (parseFloat(item.cost) || 0), 0).toFixed(2);
+                                } else {
+                                  return c.targetAmount || '0';
+                                }
+                              })()}
+                            </span>
+                          </div>
+                          <div className="w-full bg-gray-700 rounded-full h-2">
+                            <div 
+                              className="bg-purple-600 h-2 rounded-full" 
+                              style={{ 
+                                width: `${(() => {
+                                  const amountRaised = parseFloat(c.amountRaised || '0');
+                                  let targetAmount;
+                                  
+                                  if (Array.isArray(c.costBreakdown) && c.costBreakdown.length > 0) {
+                                    targetAmount = c.costBreakdown.reduce((total, item) => total + (parseFloat(item.cost) || 0), 0);
+                                  } else {
+                                    targetAmount = parseFloat(c.targetAmount || '1');
+                                  }
+                                  
+                                  const percentage = (amountRaised / targetAmount) * 100;
+                                  return Math.min(100, percentage);
+                                })()}%` 
+                              }}
+                            ></div>
+                          </div>
+                        </div>
 
                         <div className="flex justify-between items-center">
-                          <span className="text-purple-400 font-medium">${c.targetAmount}</span>
-                          <div className="flex space-x-2">
-                            <button className="p-2 text-blue-400 hover:bg-gray-700 rounded-full">
-                              <Edit className="h-4 w-4" />
-                            </button>
-                            <button
-                              onClick={() => handleDeleteCase(c._id)}
-                              className="p-2 text-red-400 hover:bg-gray-700 rounded-full"
+                          <span className="text-purple-400 font-medium">
+                            {/* Display the total from cost breakdown if available, otherwise show targetAmount */}
+                            Total: ${(() => {
+                              if (Array.isArray(c.costBreakdown) && c.costBreakdown.length > 0) {
+                                return c.costBreakdown.reduce((total, item) => total + (parseFloat(item.cost) || 0), 0).toFixed(2);
+                              } else {
+                                return c.targetAmount || '0';
+                              }
+                            })()}
+                          </span>
+                          <div>
+                            <button 
+                              onClick={() => handleEditCase(c)}
+                              className="p-2 text-blue-400 hover:bg-gray-700 rounded-full flex items-center"
                             >
-                              <Trash2 className="h-4 w-4" />
+                              <Edit className="h-4 w-4 mr-1" />
+                              <span className="text-xs">Edit</span>
                             </button>
                           </div>
                         </div>
@@ -2662,39 +3210,39 @@ export default function WelfareDashboard() {
 
                       <div className="space-y-4">
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div>
+                        <div>
                             <p className="text-sm text-gray-400">Animal Type</p>
-                          <p className="text-white">{selectedEmergency.animalType}</p>
+                          <p className="text-white">{selectedEmergency?.animalType || 'N/A'}</p>
                         </div>
                         <div>
                             <p className="text-sm text-gray-400">Condition</p>
-                          <p className="text-white">{selectedEmergency.condition}</p>
+                          <p className="text-white">{selectedEmergency?.condition || 'N/A'}</p>
                         </div>
                         <div>
                             <p className="text-sm text-gray-400">Location</p>
-                          <p className="text-white">{selectedEmergency.location}</p>
+                          <p className="text-white">{selectedEmergency?.location || 'N/A'}</p>
                         </div>
                         <div>
                             <p className="text-sm text-gray-400">Status</p>
-                            <p className="text-white">{selectedEmergency.status}</p>
+                            <p className="text-white">{selectedEmergency?.status || 'N/A'}</p>
                           </div>
                         </div>
 
                         <div>
                           <p className="text-sm text-gray-400">Description</p>
-                          <p className="text-white">{selectedEmergency.description}</p>
+                          <p className="text-white">{selectedEmergency?.description || 'N/A'}</p>
                         </div>
 
                         <div>
                           <p className="text-sm text-gray-400">Reporter Contact</p>
-                          <p className="text-white">{selectedEmergency.name} - {selectedEmergency.phone}</p>
+                          <p className="text-white">{selectedEmergency?.name || 'N/A'} - {selectedEmergency?.phone || 'N/A'}</p>
                         </div>
 
-                        {selectedEmergency.images && selectedEmergency.images.length > 0 && (
+                        {selectedEmergency?.images && selectedEmergency.images.length > 0 && (
                         <div>
                             <p className="text-sm text-gray-400 mb-2">Images</p>
                             <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
-                              {selectedEmergency.images.map((img, i) => (
+                              {selectedEmergency?.images?.map((img, i) => (
                                 <div key={i} className="h-24 bg-gray-700 rounded-md relative">
                                   <Image
                                     src={`http://localhost:5001${img.startsWith('/') ? '' : '/'}${img}`}
@@ -2722,35 +3270,22 @@ export default function WelfareDashboard() {
                           >
                             <option value="">Select a doctor</option>
                             {doctors.map((doctor) => (
-                              <option key={doctor._id} value={doctor.name}>
+                              <option key={doctor._id} value={doctor._id}>
                                 {doctor.name} - {doctor.specialization}
                               </option>
                             ))}
                           </select>
                         </div>
 
-                        <div>
-                              <label className="block text-sm text-gray-400 mb-1">Medical Issue</label>
-                          <textarea
-                            name="medicalIssue"
-                            value={emergencyDiagnosis.medicalIssue}
-                            onChange={handleDiagnosisChange}
-                                className="w-full p-2 bg-gray-700 border border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-purple-500 text-white min-h-[80px]"
-                            placeholder="Describe the medical issue or diagnosis"
-                          ></textarea>
+                        <div className="p-4 bg-gray-800 rounded-md border border-gray-700">
+                          <div className="flex items-center text-amber-400 mb-2">
+                            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-2" viewBox="0 0 20 20" fill="currentColor">
+                              <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2h-1V9z" clipRule="evenodd" />
+                            </svg>
+                            <p className="text-sm font-medium">Medical details will be added by the assigned doctor</p>
+                          </div>
+                          <p className="text-xs text-gray-400">The doctor will assess the animal's condition and provide medical details and cost estimates.</p>
                         </div>
-
-                        <div>
-                              <label className="block text-sm text-gray-400 mb-1">Estimated Cost ($)</label>
-                          <input
-                            type="number"
-                            name="estimatedCost"
-                            value={emergencyDiagnosis.estimatedCost}
-                            onChange={handleDiagnosisChange}
-                                className="w-full p-2 bg-gray-700 border border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-purple-500 text-white"
-                                placeholder="0.00"
-                          />
-                            </div>
                           </form>
                         </div>
 
@@ -2768,7 +3303,11 @@ export default function WelfareDashboard() {
                             Update Diagnosis
                           </button>
                           <button
-                            onClick={createCaseDirectly}
+                            onClick={(e) => {
+                              e.preventDefault();
+                              console.log("Create Donation Case button clicked");
+                              createCaseDirectly();
+                            }}
                             className="px-4 py-2 bg-purple-600 text-white rounded-md hover:bg-purple-700"
                           >
                             Create Donation Case
@@ -2911,15 +3450,14 @@ export default function WelfareDashboard() {
                           />
                         </div>
                         
-                        <div>
-                          <label className="block text-sm font-medium text-gray-300 mb-1">Password</label>
-                          <input
-                            type="password"
-                            value={newDoctor.password}
-                            onChange={(e) => setNewDoctor({...newDoctor, password: e.target.value})}
-                            className="w-full p-2 bg-gray-700 border border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-purple-500 text-white"
-                            required
-                          />
+                        <div className="p-4 bg-gray-700 rounded-md border border-gray-600">
+                          <div className="flex items-center text-amber-400 mb-2">
+                            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-2" viewBox="0 0 20 20" fill="currentColor">
+                              <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2h-1V9z" clipRule="evenodd" />
+                            </svg>
+                            <p className="text-sm font-medium">Temporary Password</p>
+                          </div>
+                          <p className="text-xs text-gray-300">A temporary password will be sent to the doctor's email. They will be able to change it after logging in.</p>
                         </div>
                         
                         <div>
@@ -3225,8 +3763,19 @@ export default function WelfareDashboard() {
               </div>
             )}
             
-            {(activeTab === "updates" || 
-              activeTab === "reports" || 
+            {activeTab === "updates" && (
+              <div className="bg-gray-800 rounded-lg shadow p-6 border border-gray-700 text-center">
+                <h3 className="text-lg font-medium mb-4 text-white">Updates Section</h3>
+                <p className="text-gray-400 mb-4">
+                  Manage your case updates, success stories, and announcements in the dedicated Updates page.
+                </p>
+                <Link href="/welfare/updates" className="bg-purple-600 hover:bg-purple-700 text-white px-4 py-2 rounded-md inline-flex items-center">
+                  <FileText className="h-4 w-4 mr-2" /> Go to Updates Page
+                </Link>
+              </div>
+            )}
+            
+            {(activeTab === "reports" || 
               activeTab === "analytics" || 
               activeTab === "settings") && (
               <div className="bg-gray-800 rounded-lg shadow p-6 border border-gray-700 text-center">
@@ -3236,8 +3785,8 @@ export default function WelfareDashboard() {
                 <p className="text-gray-400">
                   This section is under development and will be available soon.
                 </p>
-            </div>
-          )}
+              </div>
+            )}
 
           {/* Adoptions Tab */}
           {activeTab === "adoptions" && (
@@ -3570,7 +4119,7 @@ export default function WelfareDashboard() {
                     <div className="space-y-4">
                       <div className="bg-gray-700 p-4 rounded-md">
                         <p className="text-gray-300 mb-2">Contact Information:</p>
-                        <p className="text-white">{selectedAdoption.contactNumber}</p>
+                        <p className="text-white">{selectedAdoption?.contactNumber || 'N/A'}</p>
                       </div>
                       <div className="bg-gray-700 p-4 rounded-md">
                         <p className="text-gray-300 mb-2">Payment Details:</p>
@@ -3727,28 +4276,30 @@ export default function WelfareDashboard() {
                 <div className="space-y-4">
                   <div>
                     <p className="text-gray-400 text-sm">Animal</p>
-                    <p className="text-gray-300">{selectedRequest.adoption.name}</p>
+                    <p className="text-gray-300">{selectedRequest?.adoption?.name || 'N/A'}</p>
                   </div>
                   <div>
                     <p className="text-gray-400 text-sm">Requested by</p>
-                    <p className="text-gray-300">{selectedRequest.donor.name}</p>
+                    <p className="text-gray-300">{selectedRequest?.donor?.name || 'N/A'}</p>
                   </div>
                   <div>
                     <p className="text-gray-400 text-sm">Reason</p>
-                    <p className="text-gray-300">{selectedRequest.reason}</p>
+                    <p className="text-gray-300">{selectedRequest?.reason || 'N/A'}</p>
                   </div>
                 </div>
 
                 <div className="flex justify-end space-x-3 mt-6">
                   <button
-                    onClick={() => updateRequestStatus(selectedRequest._id, 'rejected')}
+                    onClick={() => selectedRequest?._id && updateRequestStatus(selectedRequest._id, 'rejected')}
                     className="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700"
+                    disabled={!selectedRequest}
                   >
                     Reject
                   </button>
                   <button
-                    onClick={() => updateRequestStatus(selectedRequest._id, 'approved')}
+                    onClick={() => selectedRequest?._id && updateRequestStatus(selectedRequest._id, 'approved')}
                     className="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700"
+                    disabled={!selectedRequest}
                   >
                     Approve Request
                   </button>

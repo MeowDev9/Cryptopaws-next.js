@@ -34,7 +34,7 @@ interface Case {
     name: string;
   };
   createdAt: string;
-  costBreakdown?: {
+  costBreakdown?: Array<{item: string; cost: number}> | {
     surgery: number;
     medicine: number;
     recovery: number;
@@ -219,22 +219,44 @@ export default function CaseDetailPage() {
                   {caseData.costBreakdown ? (
                     <div className="space-y-4">
                       <div className="grid grid-cols-2 gap-y-2 gap-x-4">
-                        <div className="text-gray-400">Surgery Costs:</div>
-                        <div className="text-white font-medium">${caseData.costBreakdown.surgery}</div>
-                        
-                        <div className="text-gray-400">Medicine/Treatment:</div>
-                        <div className="text-white font-medium">${caseData.costBreakdown.medicine}</div>
-                        
-                        <div className="text-gray-400">Recovery Care:</div>
-                        <div className="text-white font-medium">${caseData.costBreakdown.recovery}</div>
-                        
-                        <div className="text-gray-400">Other Expenses:</div>
-                        <div className="text-white font-medium">${caseData.costBreakdown.other}</div>
-                        
-                        <div className="text-gray-300 font-semibold pt-2 border-t border-gray-700">Total:</div>
-                        <div className="text-purple-400 font-bold pt-2 border-t border-gray-700">
-                          ${caseData.targetAmount}
-                        </div>
+                        {Array.isArray(caseData.costBreakdown) ? (
+                          // Handle array format
+                          <>
+                            {caseData.costBreakdown.map((item, index) => (
+                              <React.Fragment key={index}>
+                                <div className="text-gray-400">{item.item}:</div>
+                                <div className="text-white font-medium">${item.cost}</div>
+                              </React.Fragment>
+                            ))}
+                            <div className="text-gray-300 font-semibold pt-2 border-t border-gray-700">Total:</div>
+                            <div className="text-purple-400 font-bold pt-2 border-t border-gray-700">
+                              ${caseData.costBreakdown.reduce((total, item) => total + (Number(item.cost) || 0), 0).toFixed(2)}
+                            </div>
+                          </>
+                        ) : (
+                          // Handle object format
+                          <>
+                            <div className="text-gray-400">Surgery Costs:</div>
+                            <div className="text-white font-medium">${caseData.costBreakdown.surgery || 0}</div>
+                            
+                            <div className="text-gray-400">Medicine/Treatment:</div>
+                            <div className="text-white font-medium">${caseData.costBreakdown.medicine || 0}</div>
+                            
+                            <div className="text-gray-400">Recovery Care:</div>
+                            <div className="text-white font-medium">${caseData.costBreakdown.recovery || 0}</div>
+                            
+                            <div className="text-gray-400">Other Expenses:</div>
+                            <div className="text-white font-medium">${caseData.costBreakdown.other || 0}</div>
+                            
+                            <div className="text-gray-300 font-semibold pt-2 border-t border-gray-700">Total:</div>
+                            <div className="text-purple-400 font-bold pt-2 border-t border-gray-700">
+                              ${((caseData.costBreakdown.surgery || 0) + 
+                                 (caseData.costBreakdown.medicine || 0) + 
+                                 (caseData.costBreakdown.recovery || 0) + 
+                                 (caseData.costBreakdown.other || 0)).toFixed(2)}
+                            </div>
+                          </>
+                        )}
                       </div>
                     </div>
                   ) : (

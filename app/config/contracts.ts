@@ -1,4 +1,4 @@
-export const DONATION_CONTRACT_ADDRESS = "0xe7f1725E7734CE288F8367e1Bb143E90bb3F0512";
+export const DONATION_CONTRACT_ADDRESS = "0x199c27B10a195ee79e02d50846e59A4aFB82CAD1";
 
 export const DONATION_CONTRACT_ABI = [
   "function donate(address organizationAddress, string memory message) external payable",

@@ -50,7 +50,7 @@ export default function DonationForm({ organizationAddress, onSuccess }: Donatio
         <Input
           id="amount"
           type="number"
-          step="0.001"
+
           min="0"
           value={amount}
           onChange={(e) => setAmount(e.target.value)}

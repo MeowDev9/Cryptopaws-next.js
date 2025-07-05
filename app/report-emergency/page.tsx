@@ -22,7 +22,7 @@ import {
 } from "lucide-react"
 import Navbar from "@/components/Navbar"
 import Footer from "@/components/Footer"
-import ConnectWalletButton from "@/components/ConnectWalletButton"
+// ConnectWalletButton removed
 
 export default function ReportEmergency() {
   const router = useRouter()
@@ -41,7 +41,7 @@ export default function ReportEmergency() {
   const [success, setSuccess] = useState(false)
   const [error, setError] = useState("")
   const [isLocationLoading, setIsLocationLoading] = useState(true)
-  const [walletConnected, setWalletConnected] = useState(false)
+  // Wallet connection state removed
 
   // Get current location using Geolocation API
   const getCurrentLocation = () => {
@@ -211,10 +211,6 @@ export default function ReportEmergency() {
     }
   }
 
-  const handleWalletConnect = (connected: boolean) => {
-    setWalletConnected(connected)
-  }
-
   return (
     <>
       <Navbar />
@@ -259,20 +255,13 @@ export default function ReportEmergency() {
                   Thank you for reporting this emergency. Our team has been notified and will respond as quickly as
                   possible. You'll receive updates on the status of your report.
                 </p>
-                <div className="flex flex-wrap justify-center gap-4">
+                <div className="flex justify-center">
                   <button
                     onClick={() => setSuccess(false)}
                     className="px-6 py-3 bg-purple-600 text-white rounded-full hover:bg-purple-700 transition-colors shadow-lg shadow-purple-600/20 flex items-center gap-2"
                   >
                     <AlertTriangle size={18} />
                     Report Another Emergency
-                  </button>
-                  <button
-                    onClick={() => router.push("/donor/dashboard")}
-                    className="px-6 py-3 border border-purple-500 text-white rounded-full hover:bg-purple-700/20 transition-colors flex items-center gap-2"
-                  >
-                    <Heart size={18} />
-                    Return to Dashboard
                   </button>
                 </div>
               </div>
@@ -449,28 +438,6 @@ export default function ReportEmergency() {
                       />
                     </div>
                   </div>
-                </div>
-
-                <div className="bg-purple-900/20 p-6 rounded-xl border border-purple-500/30 backdrop-blur-sm">
-                  <h3 className="text-xl font-semibold text-white mb-3 flex items-center">
-                    <span className="w-6 h-6 bg-purple-600/30 rounded-full flex items-center justify-center mr-2">
-                      🔗
-                    </span>
-                    Connect Wallet (Optional)
-                  </h3>
-                  <p className="text-gray-300 text-sm mb-4">
-                    Connecting your wallet allows us to verify your identity on the blockchain and track the status of
-                    your emergency report securely.
-                  </p>
-                  <ConnectWalletButton onConnect={handleWalletConnect} />
-                  {walletConnected && (
-                    <div className="flex items-center mt-3 p-2 bg-green-900/20 border border-green-500/30 rounded-lg">
-                      <CheckCircle size={16} className="text-green-500 mr-2" />
-                      <p className="text-green-400 text-sm">
-                        Wallet connected successfully! Your report will be linked to your wallet address.
-                      </p>
-                    </div>
-                  )}
                 </div>
 
                 <div className="flex justify-end pt-4">

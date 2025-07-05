@@ -7,7 +7,7 @@ const bodyParser = require("body-parser");
 const dotenv = require('dotenv');
 
 const fs = require('fs');
-require("dotenv").config(); 
+require("dotenv").config();
 console.log("JWT_SECRET:", process.env.JWT_SECRET);
 
 const emergencyRoutes = require("./routes/emergency");
@@ -24,6 +24,7 @@ const caseUpdateRoutes = require("./routes/caseUpdateRoutes");
 const successStoryRoutes = require("./routes/successStoryRoutes");
 const adoptionRoutes = require("./routes/adoption");
 const doctorRoutes = require('./routes/doctorRoutes');
+const donationRoutes = require('./routes/donationRoutes');
 
 
 
@@ -77,6 +78,7 @@ app.use("/api/admin", adminRoutes);
 app.use("/api/donor", donorRoutes);
 app.use("/api/cases", caseRoutes);
 app.use("/api/case-updates", caseUpdateRoutes);
+app.use("/api/donations", donationRoutes);
 app.use("/api/success-stories", successStoryRoutes);
 app.use("/api/adoption", adoptionRoutes);
 app.use('/api/doctor', doctorRoutes);

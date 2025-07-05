@@ -378,64 +378,6 @@ const DonationSection = () => {
           animate={inView ? { opacity: 1, x: 0 } : {}}
           transition={{ duration: 0.8, delay: 0.2, ease: "easeOut" }}
         >
-          <div className="bg-white/10 backdrop-blur-md rounded-2xl p-8 shadow-2xl border border-white/10 relative overflow-hidden">
-            <div className="absolute top-0 right-0 w-40 h-40 bg-gradient-to-br from-purple-600/20 to-pink-600/20 rounded-full blur-3xl -translate-y-1/2 translate-x-1/2"></div>
-
-            <h2 className="text-3xl font-bold mb-1 bg-gradient-to-r from-purple-400 to-pink-400 bg-clip-text text-transparent">
-              Animal Charity
-            </h2>
-            <h3 className="text-xl font-normal mb-8 text-gray-300">Giving is the greatest act of grace</h3>
-
-            <form>
-              <label className="block text-sm font-semibold mb-1 text-gray-300">YOUR FULL NAME</label>
-              <input
-                type="text"
-                placeholder="Your Full Name"
-                className="w-full p-4 mb-5 border border-white/10 rounded-lg bg-white/5 text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500/50"
-              />
-
-              <label className="block text-sm font-semibold mb-1 text-gray-300">EMAIL ADDRESS</label>
-              <input
-                type="email"
-                placeholder="Email"
-                className="w-full p-4 mb-5 border border-white/10 rounded-lg bg-white/5 text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500/50"
-              />
-
-              <label className="block text-sm font-semibold mb-1 text-gray-300">SELECT CAUSE</label>
-              <select className="w-full p-4 mb-5 border border-white/10 rounded-lg bg-white/5 text-white focus:outline-none focus:ring-2 focus:ring-purple-500/50">
-                <option>Food</option>
-                <option>Shelter</option>
-                <option>Health</option>
-              </select>
-
-              <label className="block text-sm font-semibold mb-1 text-gray-300">AMOUNT TO DONATE</label>
-              <input
-                type="text"
-                placeholder="Amount"
-                className="w-full p-4 mb-5 border border-white/10 rounded-lg bg-white/5 text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500/50"
-              />
-
-              <div className="flex flex-wrap gap-4 mb-6">
-                <label className="flex items-center gap-2 cursor-pointer text-gray-300 hover:text-white transition-colors">
-                  <input type="radio" name="payment" className="accent-purple-600" /> PayPal
-                </label>
-                <label className="flex items-center gap-2 cursor-pointer text-gray-300 hover:text-white transition-colors">
-                  <input type="radio" name="payment" className="accent-purple-600" /> Credit Card
-                </label>
-                <label className="flex items-center gap-2 cursor-pointer text-gray-300 hover:text-white transition-colors">
-                  <input type="radio" name="payment" className="accent-purple-600" /> Payoneer
-                </label>
-              </div>
-
-              <button
-                type="submit"
-                className="w-full p-4 bg-gradient-to-r from-purple-600 to-pink-600 text-white border-none rounded-lg font-semibold cursor-pointer transition-all duration-300 hover:shadow-lg hover:shadow-purple-500/30 flex items-center justify-center gap-2"
-              >
-                <Heart className="h-5 w-5" />
-                Donate Now
-              </button>
-            </form>
-          </div>
         </motion.div>
       </div>
     </div>

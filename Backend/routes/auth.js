@@ -99,7 +99,7 @@ router.post("/signin", async (req, res) => {
             return res.status(400).json({ message: "Invalid email or password." });
         }
 
-        const token = jwt.sign({ id: user._id, role: user.role }, JWT_SECRET, { expiresIn: "1h" });
+        const token = jwt.sign({ id: user._id, role: user.role }, JWT_SECRET, { expiresIn: "7d" });
 
         res.status(200).json({ message: "Signin successful.", token, role: user.role });
 
@@ -141,7 +141,7 @@ router.post("/google", async (req, res) => {
             await user.save();
         }
 
-        const authToken = jwt.sign({ id: user._id, role: "donor" }, JWT_SECRET, { expiresIn: "1h" });
+        const authToken = jwt.sign({ id: user._id, role: "donor" }, JWT_SECRET, { expiresIn: "7d" });
 
         res.status(200).json({
             message: "Google Sign-In successful.",
@@ -154,6 +154,13 @@ router.post("/google", async (req, res) => {
         console.error("Google Sign-In Error:", error);
         res.status(500).json({ message: "Failed to authenticate with Google." });
     }
+});
+
+// ✅ Logout Route (stateless, placeholder for frontend compatibility)
+router.post("/logout", (req, res) => {
+    // For JWT, logout is handled on the client by removing the token.
+    // To support server-side logout, implement token blacklisting.
+    res.status(200).json({ message: "Logout successful." });
 });
 
 // ✅ Get User Profile
@@ -188,14 +195,43 @@ router.get("/cases/all", async (req, res) => {
         .populate('createdBy', 'name blockchainAddress')
         .sort({ createdAt: -1 });
 
-      // Log each case's welfare organization data
-      cases.forEach(caseItem => {
-        console.log('Case:', caseItem._id);
-        console.log('Welfare Organization:', caseItem.createdBy);
-        console.log('Welfare Address:', caseItem.createdBy?.blockchainAddress);
+      // Make sure costBreakdown is included in the response and calculate total amount
+      const casesWithFullDetails = cases.map(caseItem => {
+        const caseObj = caseItem.toObject();
+        
+        // Calculate total amount from cost breakdown if available
+        let calculatedTargetAmount = caseObj.targetAmount || 0;
+        
+        if (caseObj.costBreakdown) {
+          if (Array.isArray(caseObj.costBreakdown) && caseObj.costBreakdown.length > 0) {
+            // Array format: [{item: 'Surgery', cost: 10}, ...]
+            calculatedTargetAmount = caseObj.costBreakdown.reduce((total, item) => {
+              return total + (Number(item.cost) || 0);
+            }, 0);
+            console.log(`Case ${caseObj._id}: Calculated target from array: $${calculatedTargetAmount}`);
+          } else if (typeof caseObj.costBreakdown === 'object') {
+            // Object format: {surgery: 10, medicine: 20, ...}
+            calculatedTargetAmount = (
+              Number(caseObj.costBreakdown.surgery || 0) +
+              Number(caseObj.costBreakdown.medicine || 0) +
+              Number(caseObj.costBreakdown.recovery || 0) +
+              Number(caseObj.costBreakdown.other || 0)
+            );
+            console.log(`Case ${caseObj._id}: Calculated target from object: $${calculatedTargetAmount}`);
+          }
+        }
+        
+        return {
+          ...caseObj,
+          // Override targetAmount with calculated value
+          targetAmount: calculatedTargetAmount,
+          // Ensure welfareAddress is set from the createdBy if available
+          welfareAddress: caseObj.welfareAddress || caseObj.createdBy?.blockchainAddress || null
+        };
       });
 
-      res.status(200).json(cases);
+      console.log('Sending cases with calculated target amounts to client');
+      res.status(200).json(casesWithFullDetails);
     } catch (error) {
       console.error("Error fetching all cases:", error);
       res.status(500).json({ message: "Internal server error" });

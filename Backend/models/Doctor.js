@@ -34,6 +34,10 @@ const doctorSchema = new mongoose.Schema({
   isActive: {
     type: Boolean,
     default: true
+  },
+  passwordReset: {
+    type: Boolean,
+    default: false
   }
 }, {
   timestamps: true

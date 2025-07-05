@@ -50,60 +50,77 @@ router.get("/:caseId", async (req, res) => {
     }
 });
 
-// Create a new update for a case (requires welfare authentication)
-router.post("/", verifyWelfareToken, async (req, res) => {
+// Create a new update for a case (requires welfare or doctor authentication)
+const verifyDoctorToken = require("../middleware/doctormiddleware");
+const uploadUpdateImage = require("./multerUpdateImage");
+
+router.post("/", uploadUpdateImage.array('images', 5), async (req, res, next) => {
+    // Try doctor token first
+    verifyDoctorToken(req, res, async function() {
+        await createUpdateHandler(req, res, 'doctor');
+    }, async function() {
+        // If doctor fails, try welfare
+        verifyWelfareToken(req, res, async function() {
+            await createUpdateHandler(req, res, 'welfare');
+        }, function() {
+            // If both fail, unauthorized
+            res.status(401).json({ success: false, message: "Unauthorized: No valid doctor or welfare token" });
+        });
+    });
+});
+
+async function createUpdateHandler(req, res, authorRole) {
     try {
-        const { caseId, title, content, imageUrl, isSuccessStory } = req.body;
-        
+        const { caseId, title, content, isSuccessStory, spent, animalStatus } = req.body;
+        // Handle uploaded images
+        let imageUrl = [];
+        if (req.files && req.files.length > 0) {
+            imageUrl = req.files.map(file => `/uploads/updates/${file.filename}`);
+        } else if (req.body.imageUrl) {
+            // fallback for non-file uploads
+            imageUrl = Array.isArray(req.body.imageUrl) ? req.body.imageUrl : [req.body.imageUrl];
+        }
+
         if (!caseId || !title || !content) {
             return res.status(400).json({
                 success: false,
                 message: "Missing required fields: caseId, title, and content are required"
             });
         }
-        
-        // Verify the case exists and belongs to this welfare organization
-        const existingCase = await Case.findOne({ 
-            _id: caseId, 
-            createdBy: req.welfare._id 
-        });
-        
+        // Verify the case exists
+        const existingCase = await require("../models/Case").findById(caseId);
         if (!existingCase) {
-            return res.status(404).json({ 
-                success: false, 
-                message: "Case not found or you don't have permission to update it" 
+            return res.status(404).json({
+                success: false,
+                message: "Case not found or you don't have permission to update it"
             });
         }
-        
+        // Set postedBy based on user type
+        let postedBy;
+        if (authorRole === 'doctor') postedBy = req.doctor._id;
+        else if (authorRole === 'welfare') postedBy = req.welfare._id;
+        else return res.status(403).json({ success: false, message: "Invalid author role" });
         // Create and save the new update
         const newUpdate = new CaseUpdate({
             caseId,
             title,
             content,
-            imageUrl: imageUrl || [],
-            postedBy: req.welfare._id,
-            isSuccessStory: isSuccessStory || false
+            imageUrl,
+            isSuccessStory,
+            postedBy,
+            isPublished: true,
+            spent: spent || {},
+            authorRole,
+            animalStatus: animalStatus || ''
         });
-        
         await newUpdate.save();
-        
-        // Update the case to indicate it has updates
-        await Case.findByIdAndUpdate(caseId, { hasUpdates: true });
-        
-        res.status(201).json({
-            success: true,
-            message: "Case update created successfully",
-            update: newUpdate
-        });
+        res.status(201).json({ success: true, update: newUpdate });
     } catch (error) {
         console.error("Error creating case update:", error);
-        res.status(500).json({
-            success: false,
-            message: "Failed to create case update",
-            error: error.message
-        });
+        res.status(500).json({ success: false, message: "Failed to create case update", error: error.message });
     }
-});
+}
+
 
 // Update a case update (requires welfare authentication)
 router.put("/:updateId", verifyWelfareToken, async (req, res) => {

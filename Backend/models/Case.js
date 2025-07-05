@@ -11,7 +11,7 @@ const caseSchema = new mongoose.Schema({
     },
     targetAmount: {
         type: Number,
-        required: true,
+        required: false, // Made optional since we can calculate from costBreakdown
     },
     amountRaised: {
         type: Number,
@@ -51,6 +51,10 @@ const caseSchema = new mongoose.Schema({
         type: String,
         enum: ['active', 'completed', 'closed'],
         default: 'active',
+    },
+    isUrgent: {
+        type: Boolean,
+        default: false,
     },
 }, { timestamps: true });
 

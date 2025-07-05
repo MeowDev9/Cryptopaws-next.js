@@ -252,41 +252,63 @@ router.post("/donate", auth, async (req, res) => {
     });
     console.log("Case amount raised updated");
 
-    // Notify the welfare organization about the donation
+    // Send thank you message directly
     try {
-      console.log("Notifying welfare organization...");
-      // Make a request to the welfare route to process the donation and send thank you
-      const welfareResponse = await axios.post(
-        `${process.env.BACKEND_URL || 'http://localhost:5001'}/api/welfare/process-donation`,
-        {
-          donorId,
-          caseId,
-          amount,
-          txHash,
-          amountUsd,
-          welfareId
-        },
-        {
-          headers: {
-            'Content-Type': 'application/json',
-            'x-internal-call': 'true'
-          }
-        }
-      );
+      console.log("=== SENDING THANK YOU MESSAGE DIRECTLY ===");
+      
+      // Import the Message model
+      const Message = require("../models/Message");
+      const WelfareOrganization = require("../models/WelfareOrganization");
+      
+      // Find the case details
+      console.log("Finding case details...");
+      const caseDetails = await Case.findById(caseId);
+      if (!caseDetails) {
+        console.error("Case not found for thank you message:", caseId);
+        throw new Error("Case not found");
+      }
+      console.log("Found case details:", caseDetails.title);
 
-      console.log("Welfare notification response:", welfareResponse.data);
+      // Find the welfare organization details
+      console.log("Finding welfare organization details...");
+      const welfare = await WelfareOrganization.findById(welfareId);
+      if (!welfare) {
+        console.error("Welfare organization not found for thank you message:", welfareId);
+        throw new Error("Welfare organization not found");
+      }
+      console.log("Found welfare details:", welfare.name);
+      
+      // Create a thank you message
+      console.log("Creating thank you message...");
+      const message = new Message({
+        from: welfareId,
+        to: donorId,
+        title: `Thank you for your donation to ${caseDetails.title}!`,
+        content: `Thank you for your generous donation of ${amount} ETH to our case "${caseDetails.title}". Your support means the world to us and the animals we care for. We'll keep you updated on how your donation is making a difference.\n\nWith gratitude,\n${welfare.name} Team`,
+        relatedCase: caseId,
+        isRead: false,
+        createdAt: new Date()
+      });
+
+      console.log("Saving thank you message...");
+      const savedMessage = await message.save();
+      console.log("Thank you message created successfully with ID:", savedMessage._id);
+      
       res.status(201).json({
         message: "Donation created successfully",
         donation,
-        welfareNotified: welfareResponse.data.thankYouMessageSent
+        thankYouMessageSent: true,
+        thankYouMessageId: savedMessage._id
       });
     } catch (error) {
-      // Still return success for the donation but note that welfare notification failed
-      console.error("Error notifying welfare organization:", error);
+      // Still return success for the donation but note that thank you message failed
+      console.error("Error sending thank you message:", error);
+      console.error("Error stack:", error.stack);
       res.status(201).json({
-        message: "Donation created successfully, but failed to notify welfare organization",
+        message: "Donation created successfully, but failed to send thank you message",
         donation,
-        welfareNotified: false
+        thankYouMessageSent: false,
+        error: error.message
       });
     }
   } catch (error) {
@@ -497,6 +519,102 @@ router.get("/donations/welfare", auth, async (req, res) => {
   } catch (error) {
     console.error("Error fetching welfare donations:", error);
     res.status(500).json({ message: "Server error" });
+  }
+});
+
+// Get case updates for cases the donor has donated to
+router.get("/my-donated-cases-updates", auth, async (req, res) => {
+  try {
+    // Get the donor's ID from the authenticated user
+    const donorId = req.user.id;
+    
+    // Find all donations made by this donor
+    const donations = await Donation.find({ donor: donorId });
+    
+    if (!donations || donations.length === 0) {
+      return res.status(200).json({ success: true, updates: [] });
+    }
+    
+    // Extract the case IDs the donor has donated to
+    const caseIds = [...new Set(donations.map(donation => donation.case))];
+    
+    // Find all updates for these cases
+    const CaseUpdate = require("../models/CaseUpdate");
+    const updates = await CaseUpdate.find({ 
+      caseId: { $in: caseIds } 
+    })
+    .sort({ createdAt: -1 })
+    .populate('caseId', 'title animalType imageUrl')
+    .exec();
+    
+    // Add a field to indicate if the update has been seen by this donor
+    const updatesWithSeenStatus = updates.map(update => {
+      const updateObj = update.toObject();
+      updateObj.seen = update.seenBy.includes(donorId);
+      return updateObj;
+    });
+    
+    res.status(200).json({ success: true, updates: updatesWithSeenStatus });
+  
+  } catch (error) {
+    console.error("Error fetching donor case updates:", error);
+    res.status(500).json({ success: false, message: "Failed to fetch updates", error: error.message });
+  }
+});
+
+// Get unseen updates count for notification badge
+router.get("/unseen-updates-count", auth, async (req, res) => {
+  try {
+    const donorId = req.user.id;
+    
+    // Find all donations made by this donor
+    const donations = await Donation.find({ donor: donorId });
+    
+    if (!donations || donations.length === 0) {
+      return res.status(200).json({ success: true, unseenCount: 0 });
+    }
+    
+    // Extract the case IDs the donor has donated to
+    const caseIds = [...new Set(donations.map(donation => donation.case))];
+    
+    // Find all updates for these cases that haven't been seen by this donor
+    const CaseUpdate = require("../models/CaseUpdate");
+    const unseenCount = await CaseUpdate.countDocuments({ 
+      caseId: { $in: caseIds },
+      seenBy: { $nin: [donorId] }
+    });
+    
+    res.status(200).json({ success: true, unseenCount });
+  } catch (error) {
+    console.error("Error fetching unseen updates count:", error);
+    res.status(500).json({ success: false, message: "Failed to fetch unseen updates count", error: error.message });
+  }
+});
+
+// Mark an update as seen by the donor
+router.put("/mark-update-seen/:updateId", auth, async (req, res) => {
+  try {
+    const donorId = req.user.id;
+    const { updateId } = req.params;
+    
+    const CaseUpdate = require("../models/CaseUpdate");
+    const update = await CaseUpdate.findById(updateId);
+    
+    if (!update) {
+      return res.status(404).json({ success: false, message: "Update not found" });
+    }
+    
+    // Check if the donor has already seen this update
+    if (!update.seenBy.includes(donorId)) {
+      // Add the donor to the seenBy array
+      update.seenBy.push(donorId);
+      await update.save();
+    }
+    
+    res.status(200).json({ success: true, message: "Update marked as seen" });
+  } catch (error) {
+    console.error("Error marking update as seen:", error);
+    res.status(500).json({ success: false, message: "Failed to mark update as seen", error: error.message });
   }
 });
 

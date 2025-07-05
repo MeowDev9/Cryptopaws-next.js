@@ -21,7 +21,7 @@ interface Adoption {
   health: string;
   behavior: string;
   status: string;
-  postedBy: string;
+  postedBy: string | { name: string };
   postedByType: string;
   contactNumber: string;
   adoptedBy?: string;
@@ -158,7 +158,7 @@ export default function AdoptAnimal() {
                         </div>
                         <div className="flex items-center text-gray-600">
                           <User className="h-4 w-4 mr-2 text-gray-500" />
-                          <span>Posted by: {adoption.postedBy} ({adoption.postedByType === 'donor' ? 'Donor' : 'Welfare Organization'})</span>
+                          <span>Posted by: {typeof adoption.postedBy === 'string' ? adoption.postedBy : adoption.postedBy.name || 'Unknown'} ({adoption.postedByType === 'donor' ? 'Donor' : 'Welfare Organization'})</span>
                         </div>
                         <div className="flex items-center text-gray-600">
                           <Phone className="h-4 w-4 mr-2 text-gray-500" />
@@ -184,4 +184,3 @@ export default function AdoptAnimal() {
     </>
   )
 }
-

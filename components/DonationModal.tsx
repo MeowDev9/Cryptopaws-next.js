@@ -95,6 +95,9 @@ export default function DonationModal({
       await tx.wait()
 
       // Call the completion callback if provided
+      if (onDonationComplete) {
+        onDonationComplete({ amount: amountInEth.toString(), txHash: tx.hash, caseData: caseData })
+      }
     
 
       // Refresh cases after successful donation
@@ -189,7 +192,7 @@ export default function DonationModal({
                   onChange={(e) => setAmount(e.target.value)}
                   placeholder="Enter amount"
                   min="0"
-                  step="0.01"
+                  step="any"
                   required
                   className="pr-12"
                 />
