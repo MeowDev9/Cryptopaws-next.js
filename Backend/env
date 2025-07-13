@@ -1,0 +1,8 @@
+MONGODB_URI=mongodb://mongo:27017/cryptopaws
+PORT=5001 
+JWT_SECRET=cryptopaws_secret_key_1234567890abcdef
+GMAIL_EMAIL=cryptopaws44@gmail.com
+GMAIL_PASSWORD=nlsh buzt uiwi bbwq
+GOOGLE_CLIENT_ID = 939434414505-na4go0ebln3se9ms9m3sfl41edie3una.apps.googleusercontent.com
+NEXT_PUBLIC_USDT_CONTRACT_ADDRESS= 0x3c44cdddb6a900fa2b585dd299e03d12fa4293bc
+NEXT_PUBLIC_DONATION_CONTRACT_ADDRESS=0x199c27B10a195ee79e02d50846e59A4aFB82CAD1

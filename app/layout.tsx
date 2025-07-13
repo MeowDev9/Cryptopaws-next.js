@@ -5,7 +5,7 @@ import "./globals.css"
 import { GoogleOAuthProvider } from "@react-oauth/google"
 
 const inter = Inter({ subsets: ["latin"] })
-const GOOGLE_CLIENT_ID = "939434414505-na4go0ebln3se9ms9m3sfl41edie3una.apps.googleusercontent.com"
+const GOOGLE_CLIENT_ID = "696277523885-ic6h98jf57vdbhu2bq7eb2opjpgvnf6g.apps.googleusercontent.com"
 
 export const metadata: Metadata = {
   title: "CryptoPaws - Animal Welfare Platform",

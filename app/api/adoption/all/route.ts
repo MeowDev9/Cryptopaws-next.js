@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
-import { connectToDatabase } from '@/lib/mongodb';
-import Adoption from '@/models/Adoption';
+import { connectToDatabase } from '../../../../lib/mongodb';
+import Adoption from '../../../../lib/models/Adoption';
 
 export async function GET() {
   try {
@@ -19,4 +19,4 @@ export async function GET() {
       { status: 500 }
     );
   }
-} 
+}

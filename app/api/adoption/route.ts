@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
-import { connectToDatabase } from '@/lib/mongodb';
-import Adoption from '@/models/Adoption';
+import { connectToDatabase } from '../../../lib/mongodb';
+import Adoption from '../../../lib/models/Adoption';
 import { writeFile } from 'fs/promises';
 import { join } from 'path';
 
@@ -53,4 +53,4 @@ export async function POST(request: Request) {
       { status: 500 }
     );
   }
-} 
+}

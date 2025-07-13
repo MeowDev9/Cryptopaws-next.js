@@ -2,7 +2,7 @@ const mongoose = require("mongoose");
 
 const UserSchema = new mongoose.Schema({
     name: { type: String, required: true },
-    email: { type: String, unique: true, required: true },
+    email: { type: String, required: true },
     password: { type: String }, // Optional: Will be null for Google Sign-In users
     googleId: { type: String, unique: true, sparse: true }, // Store Google ID (Optional)
     role: { type: String, enum: ["donor", "welfare", "admin"], default: "donor" },

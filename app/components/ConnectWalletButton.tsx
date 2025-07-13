@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { Button } from "./ui/button";
+import { Button } from "@/components/ui/button";
 
 // True multi-provider support
 interface WalletProvider {
@@ -281,4 +281,4 @@ export default function ConnectWalletButton({ onAddressChange }: ConnectWalletBu
       )}
     </>
   );
-} 
+}

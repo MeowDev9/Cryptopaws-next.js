@@ -2,7 +2,12 @@
 
 import { useState, useEffect } from 'react';
 import { fetchEthPrice } from '../utils/fetchEthPrice';
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
 import { useDonationContract } from "@/hooks/useDonationContract";
 import { ethers } from 'ethers';
 import { Loader2 } from 'lucide-react';
@@ -15,7 +20,13 @@ interface DonationModalProps {
   caseId: string;
 }
 
-export default function DonationModal({ isOpen, onClose, onComplete, welfareAddress, caseId }: DonationModalProps) {
+export default function DonationModal({
+  isOpen,
+  onClose,
+  onComplete,
+  welfareAddress,
+  caseId,
+}: DonationModalProps) {
   const [amount, setAmount] = useState('');
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
@@ -30,7 +41,7 @@ export default function DonationModal({ isOpen, onClose, onComplete, welfareAddr
       try {
         const price = await fetchEthPrice();
         setEthPrice(price);
-      } catch (err) {
+      } catch {
         setEthPrice(null);
       } finally {
         setIsFetchingPrice(false);
@@ -55,25 +66,15 @@ export default function DonationModal({ isOpen, onClose, onComplete, welfareAddr
         }
       }
 
-      // Convert amount to wei
       const amountInWei = ethers.parseEther(amount);
-      
-      // Call the donate function from our hook
       const receipt = await donate(welfareAddress, amountInWei, message);
-      
-      // Call onComplete with transaction data
-      onComplete({
-        amount,
-        txHash: receipt.transactionHash
-      });
 
-      // Close modal
+      onComplete({ amount, txHash: receipt.transactionHash });
       onClose();
     } catch (err: any) {
       setError(err.message || 'An error occurred while processing your donation');
     }
   };
-
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
@@ -81,6 +82,7 @@ export default function DonationModal({ isOpen, onClose, onComplete, welfareAddr
         <DialogHeader>
           <DialogTitle>Make a Donation</DialogTitle>
         </DialogHeader>
+
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
             <label htmlFor="amount" className="block text-sm font-medium text-gray-700">
@@ -99,7 +101,7 @@ export default function DonationModal({ isOpen, onClose, onComplete, welfareAddr
             />
             {ethPrice && (
               <div className="text-xs text-gray-500 mt-1">
-                Minimum donation: ${(5).toFixed(2)} USD ({(5 / ethPrice).toFixed(6)} ETH)
+                Minimum donation: $5.00 USD ({(5 / ethPrice).toFixed(6)} ETH)
               </div>
             )}
             {amount && ethPrice && !isNaN(Number(amount)) && (
@@ -110,7 +112,40 @@ export default function DonationModal({ isOpen, onClose, onComplete, welfareAddr
             {isFetchingPrice && (
               <div className="text-xs text-gray-400 mt-1">Fetching ETH price...</div>
             )}
-            {(!isFetchingPrice && ethPrice === null) && (
+            {!isFetchingPrice && ethPrice === null && (
               <div className="text-xs text-red-400 mt-1">Unable to fetch ETH price</div>
             )}
-ok 
+          </div>
+
+          {error && (
+            <div className="text-sm text-red-600 flex items-center gap-2">
+              <Loader2 className="w-4 h-4" /> {error}
+            </div>
+          )}
+
+          <div className="flex justify-end pt-2">
+            <button
+              type="button"
+              onClick={onClose}
+              disabled={isLoading}
+              className="mr-2 px-4 py-2 bg-gray-200 rounded"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              disabled={isLoading}
+              className="px-4 py-2 bg-indigo-600 text-white rounded"
+            >
+              {isLoading ? (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin inline-block" />
+              ) : (
+                'Donate Now'
+              )}
+            </button>
+          </div>
+        </form>
+      </DialogContent>
+    </Dialog>
+  );
+}
