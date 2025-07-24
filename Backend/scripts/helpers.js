@@ -290,4 +290,4 @@ export const DONATION_CONTRACT_ABI_ARRAY = [
       "stateMutability": "nonpayable",
       "type": "function"
     }
-] as const; 
+]; 

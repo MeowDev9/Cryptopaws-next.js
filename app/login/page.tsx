@@ -85,7 +85,7 @@ export default function LoginPage() {
       console.log("API Response:", result)
 
       if (res.ok && result.token) {
-        setSuccessMessage(isSignUp ? "Signup successful!" : "Signin successful!")
+        setSuccessMessage(isSignUp ? "Registration successful! You can now sign in." : "Sign in successful!")
         if (!isSignUp) {
           // Store token based on role
           if (role === "Admin") {
@@ -101,22 +101,62 @@ export default function LoginPage() {
             localStorage.setItem("donorToken", result.token)
             router.push("/donor/dashboard")
           }
+        } else if (isSignUp) {
+          // For signup, clear the form and switch to sign in
+          setName("")
+          setEmail("")
+          setPassword("")
+          setIsSignUp(false)
         }
       } else {
-        setErrorMessage(result.message || "Login failed")
+        // Handle specific error messages from the backend
+        if (result.message && result.message.includes("already registered")) {
+          setErrorMessage("This email is already registered. Please sign in instead.")
+        } else if (result.message && result.message.includes("invalid credentials")) {
+          setErrorMessage("Invalid email or password. Please try again.")
+        } else if (result.message) {
+          // Generic error message for other cases
+          setErrorMessage(result.message)
+        } else {
+          setErrorMessage("An error occurred. Please try again.")
+        }
       }
     } catch (error: any) {
-      console.error(error)
-      setErrorMessage("Server error: " + error.message)
+      console.error("Login error:", error);
+      
+      // Handle network errors
+      if (error.name === 'TypeError' && error.message.includes('fetch')) {
+        setErrorMessage("Unable to connect to the server. Please check your internet connection and try again.");
+      } 
+      // Handle specific error cases
+      else if (error.message) {
+        const errorMessage = error.message.toLowerCase();
+        
+        if (errorMessage.includes('network request failed')) {
+          setErrorMessage("Network error. Please check your internet connection and try again.");
+        } else if (errorMessage.includes('invalid credentials') || errorMessage.includes('user not found')) {
+          setErrorMessage("Invalid email or password. Please try again.");
+        } else if (errorMessage.includes('account not verified')) {
+          setErrorMessage("Please verify your email before signing in. Check your inbox for the verification link.");
+        } else if (errorMessage.includes('too many attempts')) {
+          setErrorMessage("Too many login attempts. Please try again later.");
+        } else {
+          // Default error message
+          setErrorMessage("An unexpected error occurred. Please try again.");
+        }
+      } else {
+        // Fallback error message
+        setErrorMessage("An unexpected error occurred. Please try again later.");
+      }
     } finally {
-      setIsLoading(false)
+      setIsLoading(false);
     }
   }
 
   const handleGoogleLogin = async (idToken: string) => {
-    setIsLoading(true)
-    setErrorMessage("")
-    setSuccessMessage("")
+    setIsLoading(true);
+    setErrorMessage("");
+    setSuccessMessage("");
 
     try {
       // Send idToken to backend for verification and JWT creation
@@ -124,25 +164,69 @@ export default function LoginPage() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ idToken }),
-      })
+      });
 
       if (!response.ok) {
-        const errorData = await response.json()
-        throw new Error(errorData.message || "Google authentication failed")
+        const errorData = await response.json();
+        let errorMessage = "Google authentication failed";
+        
+        // Handle specific error cases
+        if (response.status === 400) {
+          if (errorData.message && errorData.message.includes("already registered")) {
+            errorMessage = "This Google account is already registered with a different login method. Please use email/password or try a different Google account.";
+          } else if (errorData.message) {
+            errorMessage = errorData.message;
+          }
+        } else if (response.status === 429) {
+          errorMessage = "Too many login attempts. Please try again later.";
+        } else if (response.status >= 500) {
+          errorMessage = "Our servers are experiencing issues. Please try again later.";
+        }
+        
+        throw new Error(errorMessage);
       }
 
-      const result = await response.json()
+      const result = await response.json();
+
+      if (!result.token) {
+        throw new Error("No authentication token received from server");
+      }
 
       // Store the JWT token returned from our backend (not the Google token)
-      localStorage.setItem("donorToken", result.token)
+      localStorage.setItem("donorToken", result.token);
 
-      // Redirect to Donor dashboard
-      router.push("/donor/dashboard")
+      // Show success message before redirecting
+      setSuccessMessage("Successfully signed in with Google!");
+      
+      // Small delay to show success message before redirect
+      setTimeout(() => {
+        // Redirect to Donor dashboard
+        router.push("/donor/dashboard");
+      }, 1000);
+      
     } catch (error: any) {
-      console.error("Google login error:", error)
-      setErrorMessage("Failed to sign in with Google. Please try again.")
+      console.error("Google login error:", error);
+      
+      let userFriendlyError = "Failed to sign in with Google. Please try again.";
+      
+      // Provide more specific error messages for common cases
+      if (error.message) {
+        const errorMessage = error.message.toLowerCase();
+        
+        if (errorMessage.includes('network request failed')) {
+          userFriendlyError = "Network error. Please check your internet connection and try again.";
+        } else if (errorMessage.includes('already registered')) {
+          userFriendlyError = error.message; // Use the specific error message from the server
+        } else if (errorMessage.includes('popup closed')) {
+          userFriendlyError = "Google sign-in was cancelled. Please try again if you want to continue.";
+        } else if (errorMessage.includes('idpiframe_initialization_failed')) {
+          userFriendlyError = "Could not connect to Google. Please check your internet connection and try again.";
+        }
+      }
+      
+      setErrorMessage(userFriendlyError);
     } finally {
-      setIsLoading(false)
+      setIsLoading(false);
     }
   }
 

@@ -1,6 +1,6 @@
 "use client"
 
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useMemo } from "react";
 import { useRouter } from "next/navigation"
 import Image from "next/image"
 import {
@@ -48,7 +48,131 @@ import Link from "next/link"
 import { useDonationContract } from "@/hooks/useDonationContract"
 import { ethers } from "ethers"
 import { useToast } from "@/components/ui/use-toast"
-import { DONATION_CONTRACT_ADDRESS, DONATION_CONTRACT_ABI } from "@/app/config/contracts"
+import { DONATION_CONTRACT_ABI, DONATION_CONTRACT_ADDRESS } from "@/app/config/contracts";
+
+// Define raw types that match the contract's ABI exactly
+interface RawDonation {
+  donor: string;
+  organization: string;
+  amount: ethers.BigNumberish;
+  timestamp: ethers.BigNumberish;
+  message: string;
+}
+
+interface RawOrganizationInfo {
+  name: string;
+  description: string;
+  walletAddress: string;
+  isActive: boolean;
+  orgTotalDonations: ethers.BigNumberish;
+  uniqueDonors: ethers.BigNumberish;
+}
+
+// Define frontend-friendly types
+interface Donation {
+  donor: string;
+  organization: string;
+  amount: string; // Formatted amount
+  timestamp: number; // Unix timestamp in milliseconds
+  message: string;
+  amountWei: string; // Raw amount in wei
+  timestampSeconds: number; // Raw timestamp in seconds
+  caseId: string; // Case identifier
+}
+
+interface OrganizationInfo {
+  name: string;
+  description: string;
+  walletAddress: string;
+  isActive: boolean;
+  totalDonations: string; // Formatted amount
+  uniqueDonors: number;
+}
+
+// Helper function to convert raw contract data to frontend format
+function toDonation(donation: RawDonation | null | undefined): Donation {
+  // Return default values if donation is null or undefined
+  if (!donation) {
+    return {
+      donor: ethers.ZeroAddress,
+      organization: ethers.ZeroAddress,
+      amount: '0',
+      timestamp: 0,
+      message: '',
+      amountWei: '0',
+      timestampSeconds: 0,
+      caseId: ''
+    };
+  }
+
+  // Safely handle BigNumberish values
+  const amount = donation.amount != null 
+    ? ethers.formatEther(donation.amount)
+    : '0';
+    
+  const amountWei = donation.amount != null
+    ? donation.amount.toString()
+    : '0';
+    
+  const timestamp = donation.timestamp != null
+    ? Number(donation.timestamp) * 1000 // Convert to ms for JS Date
+    : 0;
+    
+  const timestampSeconds = donation.timestamp != null
+    ? Number(donation.timestamp)
+    : 0;
+
+  return {
+    donor: donation.donor || ethers.ZeroAddress,
+    organization: donation.organization || ethers.ZeroAddress,
+    message: donation.message || '',
+    amount,
+    amountWei,
+    timestamp,
+    timestampSeconds,
+    caseId: (donation as any).caseId || '' // Handle caseId from raw donation if it exists
+  };
+}
+
+// Helper function to convert raw organization info to frontend format
+function toOrganizationInfo(info: RawOrganizationInfo | null | undefined): OrganizationInfo {
+  // Return default values if info is null or undefined
+  if (!info) {
+    return {
+      name: '',
+      description: '',
+      walletAddress: ethers.ZeroAddress,
+      isActive: false,
+      totalDonations: '0',
+      uniqueDonors: 0
+    };
+  }
+
+  // Safely handle BigNumberish values
+  const totalDonations = info.orgTotalDonations != null 
+    ? ethers.formatEther(info.orgTotalDonations) 
+    : '0';
+    
+  const uniqueDonors = info.uniqueDonors != null 
+    ? Number(info.uniqueDonors)
+    : 0;
+
+  return {
+    name: info.name || '',
+    description: info.description || '',
+    walletAddress: info.walletAddress || ethers.ZeroAddress,
+    isActive: info.isActive || false,
+    totalDonations,
+    uniqueDonors
+  };
+}
+
+// Contract interface with proper typing
+interface DonationContract extends Omit<ethers.Contract, 'getOrganizationInfo' | 'getDonorHistory'> {
+  getOrganizationInfo(orgAddress: string): Promise<RawOrganizationInfo>;
+  getDonorHistory(donorAddress: string): Promise<RawDonation[]>;
+}
+
 import { Button } from "@/components/ui/button"
 
 // Mock data for charts
@@ -285,6 +409,62 @@ interface AdoptionRequest {
   paymentProof?: string;
 }
 
+// Memoized chart components to prevent unnecessary re-renders
+const MemoizedDonationTrendsChart = React.memo(({ data }: { data: Array<{ month: string; amount: number }> }) => (
+  <div className="bg-gray-800 rounded-lg shadow p-6 border border-gray-700">
+    <h3 className="text-lg font-medium mb-4 text-white">Donation Trends</h3>
+    <div className="h-80">
+      <ResponsiveContainer width="100%" height="100%">
+        <LineChart data={data}>
+          <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
+          <XAxis dataKey="month" stroke="#9CA3AF" />
+          <YAxis stroke="#9CA3AF" />
+          <Tooltip 
+            contentStyle={{ backgroundColor: "#1F2937", borderColor: "#374151" }} 
+            formatter={(value: number) => [`$${value.toFixed(2)}`, 'Amount']}
+          />
+          <Legend />
+          <Line 
+            type="monotone" 
+            dataKey="amount" 
+            stroke="#8B5CF6" 
+            activeDot={{ r: 8 }} 
+            strokeWidth={2}
+            dot={false}
+            animationDuration={1000}
+          />
+        </LineChart>
+      </ResponsiveContainer>
+    </div>
+  </div>
+));
+
+const MemoizedCasePerformanceChart = React.memo(({ data }: { data: Array<{ name: string; donations: number }> }) => (
+  <div className="bg-gray-800 rounded-lg shadow p-6 border border-gray-700">
+    <h3 className="text-lg font-medium mb-4 text-white">Case Performance</h3>
+    <div className="h-80">
+      <ResponsiveContainer width="100%" height="100%">
+        <BarChart data={data}>
+          <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
+          <XAxis dataKey="name" stroke="#9CA3AF" />
+          <YAxis stroke="#9CA3AF" />
+          <Tooltip 
+            contentStyle={{ backgroundColor: "#1F2937", borderColor: "#374151" }} 
+            formatter={(value: number) => [`$${value.toFixed(2)}`, 'Donations']}
+          />
+          <Legend />
+          <Bar 
+            dataKey="donations" 
+            fill="#10B981" 
+            radius={[4, 4, 0, 0]}
+            animationDuration={1000}
+          />
+        </BarChart>
+      </ResponsiveContainer>
+    </div>
+  </div>
+));
+
 export default function WelfareDashboard() {
   const router = useRouter()
   const [isSidebarOpen, setIsSidebarOpen] = useState(true)
@@ -487,7 +667,6 @@ export default function WelfareDashboard() {
   // Function to fetch all cases
   const fetchCases = useCallback(async () => {
     try {
-      console.log('Fetching all cases...');
       const token = localStorage.getItem('welfareToken');
       if (!token) return;
 
@@ -558,17 +737,6 @@ export default function WelfareDashboard() {
     // Only fetch cases when on dashboard or cases tab
     if (activeTab === 'dashboard' || activeTab === 'cases') {
       fetchCases();
-      
-      // Set up a periodic refresh for cases data (every 30 seconds)
-      const refreshInterval = setInterval(() => {
-        if (activeTab === 'dashboard' || activeTab === 'cases') {
-          console.log('Auto-refreshing cases data...');
-          fetchCases();
-        }
-      }, 30000); // 30 seconds
-      
-      // Clean up interval on unmount or tab change
-      return () => clearInterval(refreshInterval);
     }
   }, [activeTab, fetchCases]);
 
@@ -639,6 +807,10 @@ export default function WelfareDashboard() {
       const data = await response.json();
 
       // Register the organization in the smart contract
+      console.log("Address passed to registerOrganization:", address);
+      console.log("Data from backend:", data);
+
+
       await registerOrganization(
         data.welfare.name,
         data.welfare.description || '',
@@ -1632,7 +1804,32 @@ export default function WelfareDashboard() {
       
       if (!response.ok) {
         const errorData = await response.json();
-        throw new Error(errorData.message || "Failed to register doctor");
+        let errorMessage = "Failed to register doctor";
+        
+        // Handle specific error cases
+        if (response.status === 400) {
+          if (errorData.message && errorData.message.includes("already registered")) {
+            errorMessage = "This email is already registered. Please use a different email address.";
+          } else if (errorData.message && errorData.message.includes("invalid email")) {
+            errorMessage = "Please enter a valid email address.";
+          } else if (errorData.message) {
+            errorMessage = errorData.message;
+          }
+        } else if (response.status === 403) {
+          errorMessage = "You don't have permission to perform this action.";
+        } else if (response.status === 500) {
+          errorMessage = "An unexpected server error occurred. Please try again later.";
+        }
+        
+        // Show the error toast
+        toast({
+          title: "Error",
+          description: errorMessage,
+          variant: "destructive",
+        });
+        
+        // Re-throw the error for further handling if needed
+        throw new Error(errorMessage);
       }
       
       const data = await response.json();
@@ -2009,25 +2206,24 @@ export default function WelfareDashboard() {
 
   // Create a separate fetchDashboardData function using useCallback for proper dependency management
   const fetchDashboardData = useCallback(async () => {
-    // Set loading state
-    setLoadingDashboardData(true);
-    
     try {
       const token = localStorage.getItem("welfareToken");
       if (!token) {
         console.error("No token found");
-        setLoadingDashboardData(false);
         return;
       }
 
-      console.log("Fetching dashboard data...");
+      // Set loading state
+      setLoadingDashboardData(true);
+
       // Fetch donations data with cache: 'no-store' to ensure fresh data
       const donationsResponse = await fetch("http://localhost:5001/api/welfare/donations", {
         method: 'GET',
         headers: {
           'Authorization': `Bearer ${token}`
         },
-        cache: 'no-store'
+        cache: 'no-store',
+        next: { revalidate: 30 } // Revalidate every 30 seconds
       });
 
       if (!donationsResponse.ok) {
@@ -2035,28 +2231,24 @@ export default function WelfareDashboard() {
       }
 
       const donationsData = await donationsResponse.json();
-      console.log("Dashboard data received:", donationsData);
       
-      // Update state with the fetched data
-      setDonations({
+      // Update all state in a single batch
+      setDonations(prev => ({
         ...donationsData.stats,
-        items: donationsData.donations || [] // Make sure to update the donations list
-      });
+        items: donationsData.donations || []
+      }));
       
-      // Update donor count stats
-      setDonorsCount({
+      setDonorsCount(prev => ({
         total: donationsData.stats.uniqueDonors,
         thisMonth: donationsData.stats.newDonorsThisMonth,
         percentChange: donationsData.stats.donorPercentChange
-      });
+      }));
       
-      // Update chart data
-      setDashboardCharts({
+      setDashboardCharts(prev => ({
         donationsByMonth: donationsData.charts.byMonth,
         casePerformance: donationsData.charts.byCase
-      });
+      }));
       
-      console.log("Updated donations state with items:", donationsData.donations?.length || 0, "donations");
     } catch (error) {
       console.error('Error fetching dashboard data:', error);
       toast({
@@ -2065,37 +2257,60 @@ export default function WelfareDashboard() {
         variant: "destructive",
       });
     } finally {
-      // Clear loading state
       setLoadingDashboardData(false);
     }
   }, [toast]);
-
-  // Add useEffect to fetch data on initial load and set up polling
-  useEffect(() => {
-    // Fetch data immediately when the component mounts if the token exists
-    if (welfareToken) {
-      fetchDashboardData();
-      
-      // Set up polling for dashboard data (every 30 seconds)
-      const pollingInterval = setInterval(() => {
-        // Only poll when dashboard tab is active
-        if (activeTab === 'dashboard') {
-          console.log('Polling dashboard data...');
-          fetchDashboardData();
-        }
-      }, 30000); // 30 seconds
-      
-      // Clean up interval on unmount
-      return () => clearInterval(pollingInterval);
-    }
-  }, [welfareToken, fetchDashboardData, activeTab]); // Include all dependencies
   
-  // Add useEffect to refetch data when tab changes to dashboard
+  // Memoize the fetch function
+  const memoizedFetchDashboardData = useCallback(fetchDashboardData, [fetchDashboardData]);
+
+  // Add useEffect to manage data fetching and polling
+  useEffect(() => {
+    // Only proceed if we have a token
+    if (!welfareToken) return;
+    
+    let isMounted = true;
+    let timeoutId: NodeJS.Timeout;
+    
+    const fetchData = async () => {
+      if (!isMounted) return;
+      
+      try {
+        await memoizedFetchDashboardData();
+      } catch (error) {
+        console.error('Error in data fetch:', error);
+      }
+      
+      // Only set up next poll if component is still mounted
+      if (isMounted) {
+        // Only poll if we're on the dashboard tab
+        if (activeTab === 'dashboard') {
+          timeoutId = setTimeout(fetchData, 30000); // 30 seconds
+        }
+      }
+    };
+    
+    // Initial fetch
+    fetchData();
+    
+    // Cleanup function
+    return () => {
+      isMounted = false;
+      if (timeoutId) clearTimeout(timeoutId);
+    };
+  }, [welfareToken, activeTab, memoizedFetchDashboardData]);
+  
+  // Add effect to fetch data when tab changes to dashboard
   useEffect(() => {
     if (activeTab === 'dashboard' && welfareToken) {
-      fetchDashboardData();
+      // Use a small timeout to avoid rapid successive fetches
+      const timer = setTimeout(() => {
+        memoizedFetchDashboardData();
+      }, 100);
+      
+      return () => clearTimeout(timer);
     }
-  }, [activeTab, welfareToken, fetchDashboardData]);
+  }, [activeTab, welfareToken, memoizedFetchDashboardData]);
 
   // Add useEffect for fetching blockchain data
   useEffect(() => {
@@ -2106,41 +2321,74 @@ export default function WelfareDashboard() {
           return;
         }
 
-        const provider = new ethers.JsonRpcProvider("http://localhost:8545");
-        const contract = new ethers.Contract(
-          DONATION_CONTRACT_ADDRESS,
-          DONATION_CONTRACT_ABI,
-          provider
-        );
+        // Validate and format the blockchain address
+        let formattedAddress: string;
+        try {
+          if (ethers.isAddress(profile.blockchainAddress)) {
+            formattedAddress = ethers.getAddress(profile.blockchainAddress);
+          } else {
+            console.error("Invalid blockchain address format:", profile.blockchainAddress);
+            return;
+          }
+        } catch (error) {
+          console.error("Error formatting blockchain address:", error);
+          return;
+        }
 
-        const [name, description, walletAddress, isActive, totalDonations, uniqueDonors] = 
-          await contract.getOrganizationInfo(profile.blockchainAddress);
+        try {
+          // Initialize provider with just the URL
+          const provider = new ethers.JsonRpcProvider("https://sepolia.era.zksync.dev");
+          
+          // Create contract instance with proper typing
+          const contract = new ethers.Contract(
+            ethers.getAddress(DONATION_CONTRACT_ADDRESS),
+            DONATION_CONTRACT_ABI,
+            provider
+          ) as unknown as DonationContract;
 
-        const donorHistory = await contract.getDonorHistory(profile.blockchainAddress);
-        const { monthlyDonations, casePerformance, recentDonations } = processDonationData(donorHistory);
+          // Get organization info with proper typing and conversion
+          const rawOrgInfo = await contract.getOrganizationInfo(formattedAddress);
+          const orgInfo = toOrganizationInfo(rawOrgInfo);
+          const { name, description, walletAddress, isActive, totalDonations, uniqueDonors } = orgInfo;
 
-        setDonations({
-          total: parseFloat(ethers.formatEther(totalDonations)),
-          totalUsd: parseFloat(ethers.formatEther(totalDonations)) * 3000,
-          thisMonth: monthlyDonations[monthlyDonations.length - 1]?.amount || 0,
-          thisMonthUsd: (monthlyDonations[monthlyDonations.length - 1]?.amount || 0) * 3000,
-          percentChange: monthlyDonations.length > 1 
-            ? ((monthlyDonations[monthlyDonations.length - 1]?.amount || 0) - (monthlyDonations[monthlyDonations.length - 2]?.amount || 0)) / (monthlyDonations[monthlyDonations.length - 2]?.amount || 1) * 100
-            : 0,
-          uniqueDonors: Number(uniqueDonors),
-          newDonorsThisMonth: 0,
-          donorPercentChange: 0,
-          items: recentDonations
-        });
+          // Get donor history with proper typing and conversion
+          const rawDonorHistory = await contract.getDonorHistory(formattedAddress);
+          const donorHistory = rawDonorHistory.map(toDonation);
+          
+          const { monthlyDonations, casePerformance, recentDonations } = processDonationData(donorHistory);
 
-        setDashboardCharts({
-          donationsByMonth: monthlyDonations,
-          casePerformance: casePerformance
-        });
+          setDonations(prev => ({
+            ...prev,
+            total: parseFloat(ethers.formatEther(totalDonations || '0')),
+            totalUsd: parseFloat(ethers.formatEther(totalDonations || '0')) * 3000,
+            thisMonth: monthlyDonations[monthlyDonations.length - 1]?.amount || 0,
+            thisMonthUsd: (monthlyDonations[monthlyDonations.length - 1]?.amount || 0) * 3000,
+            percentChange: monthlyDonations.length > 1 
+              ? ((monthlyDonations[monthlyDonations.length - 1]?.amount || 0) - (monthlyDonations[monthlyDonations.length - 2]?.amount || 0)) / (monthlyDonations[monthlyDonations.length - 2]?.amount || 1) * 100
+              : 0,
+            uniqueDonors: Number(uniqueDonors || 0),
+            newDonorsThisMonth: 0,
+            donorPercentChange: 0,
+            items: recentDonations
+          }));
+
+          setDashboardCharts(prev => ({
+            ...prev,
+            donationsByMonth: monthlyDonations,
+            casePerformance: casePerformance
+          }));
+          
+        } catch (error) {
+          console.error("Error in blockchain data fetch:", error);
+          // Don't show error to user if it's just a blockchain data fetch issue
+        }
 
       } catch (error: unknown) {
-        console.error("Error fetching blockchain data:", error);
-        setError(handleError(error));
+        console.error("Error in fetchBlockchainData:", error);
+        // Only show non-blockchain related errors to user
+        if (!(error instanceof Error && error.message.includes('network does not support ENS'))) {
+          setError(handleError(error));
+        }
       }
     };
 
@@ -2198,29 +2446,40 @@ export default function WelfareDashboard() {
 
         // If we have a blockchain address, also fetch blockchain data
         if (profile?.blockchainAddress) {
-          const provider = new ethers.JsonRpcProvider("http://localhost:8545");
-          const contract = new ethers.Contract(
-            DONATION_CONTRACT_ADDRESS,
-            DONATION_CONTRACT_ABI,
-            provider
-          );
+          try {
+            // Validate and format the blockchain address
+            let formattedAddress: string;
+            if (ethers.isAddress(profile.blockchainAddress)) {
+              formattedAddress = ethers.getAddress(profile.blockchainAddress);
+              
+              const provider = new ethers.JsonRpcProvider("https://sepolia.era.zksync.dev");
+              const contract = new ethers.Contract(
+                DONATION_CONTRACT_ADDRESS,
+                DONATION_CONTRACT_ABI,
+                provider
+              );
 
-          // Get organization info from blockchain
-          const [name, description, walletAddress, isActive, totalDonations, uniqueDonors] = 
-            await contract.getOrganizationInfo(profile.blockchainAddress);
+              // Get organization info from blockchain using the formatted address
+              const [name, description, walletAddress, isActive, totalDonations, uniqueDonors] = 
+                await contract.getOrganizationInfo(formattedAddress);
 
-          // Update blockchain-specific stats
-          setDonations(prev => ({
-            ...prev,
-            total: parseFloat(ethers.formatEther(totalDonations)),
-            totalUsd: parseFloat(ethers.formatEther(totalDonations)) * 3000,
-            uniqueDonors: Number(uniqueDonors)
-          }));
+              // Update blockchain-specific stats
+              setDonations(prev => ({
+                ...prev,
+                total: parseFloat(ethers.formatEther(totalDonations)),
+                totalUsd: parseFloat(ethers.formatEther(totalDonations)) * 3000,
+                uniqueDonors: Number(uniqueDonors)
+              }));
 
-          setDonorsCount(prev => ({
-            ...prev,
-            total: Number(uniqueDonors)
-          }));
+              setDonorsCount(prev => ({
+                ...prev,
+                total: Number(uniqueDonors)
+              }));
+            }
+          } catch (error) {
+            console.error('Error fetching blockchain data in donation data fetch:', error);
+            // Don't throw the error here to prevent breaking the entire donation data fetch
+          }
         }
       } catch (error) {
         console.error('Error fetching donation data:', error);
@@ -2229,15 +2488,12 @@ export default function WelfareDashboard() {
 
     // Initial fetch
     fetchDonationData();
-
-    // Set up polling interval (every 30 seconds)
-    const interval = setInterval(fetchDonationData, 30000);
-
-    // Clean up interval on component unmount
-    return () => clearInterval(interval);
   }, [profile?.blockchainAddress]);
 
-  const processDonationData = (donations: Donation[]) => {
+  // Memoized donation data processing
+  const processDonationData = useCallback((donations: Donation[]) => {
+    if (!donations?.length) return { monthlyDonations: [], casePerformance: [], recentDonations: [] };
+    
     const monthlyDonations: MonthlyDonation[] = [];
     const casePerformance: CasePerformance[] = [];
     const recentDonations: RecentDonation[] = [];
@@ -2284,12 +2540,22 @@ export default function WelfareDashboard() {
     // Convert caseMap to casePerformance array
     const casePerformanceArray: CasePerformance[] = Array.from(caseMap.values());
 
+    // Sort monthly donations chronologically
+    const sortedMonthlyDonations = monthlyDonations.sort((a, b) => 
+      new Date(`1 ${a.month}`).getTime() - new Date(`1 ${b.month}`).getTime()
+    );
+    
+    // Sort recent donations by date (newest first)
+    const sortedRecentDonations = recentDonations.sort((a, b) => 
+      new Date(b.date).getTime() - new Date(a.date).getTime()
+    );
+    
     return { 
-      monthlyDonations, 
+      monthlyDonations: sortedMonthlyDonations, 
       casePerformance: casePerformanceArray, 
-      recentDonations 
+      recentDonations: sortedRecentDonations 
     };
-  };
+  }, []); // Empty dependency array as we don't use any external values
 
   // Add this function to fetch adoption requests
   const fetchAdoptionRequests = async () => {
@@ -2682,37 +2948,8 @@ export default function WelfareDashboard() {
                   </div>
 
                   <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                    <div className="bg-gray-800 rounded-lg shadow p-6 border border-gray-700">
-                      <h3 className="text-lg font-medium mb-4 text-white">Donation Trends</h3>
-                      <div className="h-80">
-                        <ResponsiveContainer width="100%" height="100%">
-                          <LineChart data={dashboardCharts?.donationsByMonth || []}>
-                            <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
-                            <XAxis dataKey="month" stroke="#9CA3AF" />
-                            <YAxis stroke="#9CA3AF" />
-                            <Tooltip contentStyle={{ backgroundColor: "#1F2937", borderColor: "#374151" }} />
-                            <Legend />
-                            <Line type="monotone" dataKey="amount" stroke="#8B5CF6" activeDot={{ r: 8 }} />
-                          </LineChart>
-                        </ResponsiveContainer>
-                      </div>
-                    </div>
-
-                    <div className="bg-gray-800 rounded-lg shadow p-6 border border-gray-700">
-                      <h3 className="text-lg font-medium mb-4 text-white">Case Performance</h3>
-                      <div className="h-80">
-                        <ResponsiveContainer width="100%" height="100%">
-                          <BarChart data={dashboardCharts?.casePerformance || []}>
-                            <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
-                            <XAxis dataKey="name" stroke="#9CA3AF" />
-                            <YAxis stroke="#9CA3AF" />
-                            <Tooltip contentStyle={{ backgroundColor: "#1F2937", borderColor: "#374151" }} />
-                            <Legend />
-                            <Bar dataKey="donations" fill="#10B981" />
-                          </BarChart>
-                        </ResponsiveContainer>
-                      </div>
-                    </div>
+                    <MemoizedDonationTrendsChart data={dashboardCharts?.donationsByMonth || []} />
+                    <MemoizedCasePerformanceChart data={dashboardCharts?.casePerformance || []} />
                   </div>
 
                   <div className="bg-gray-800 rounded-lg shadow p-6 border border-gray-700">

@@ -5,6 +5,7 @@ const { OAuth2Client } = require("google-auth-library");
 const User = require("../models/User");
 const WelfareOrganization = require("../models/WelfareOrganization"); 
 const Case = require("../models/Case");
+const { isEmailInUse } = require("../utils/emailUtils");
 require("dotenv").config();
 
 const router = express.Router();
@@ -39,11 +40,10 @@ router.post("/signup", async (req, res) => {
     }
 
     try {
-        const emailLower = email.toLowerCase();
-        const existingUser = await User.findOne({ email: emailLower }) || await WelfareOrganization.findOne({ email: emailLower });
-
-        if (existingUser) {
-            return res.status(400).json({ message: "User already exists." });
+        // Validate email format and check if it's already in use
+        const { isValid, isUsed, message } = await validateEmail(email);
+        if (!isValid || isUsed) {
+            return res.status(400).json({ message });
         }
 
         const hashedPassword = await bcrypt.hash(password, 10);

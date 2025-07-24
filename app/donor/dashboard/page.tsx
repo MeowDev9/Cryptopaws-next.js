@@ -2492,7 +2492,7 @@ export default function DonorDashboard() {
                           </td>
                           <td className="py-3 text-sm">
                             <a
-                              href={`https://etherscan.io/tx/${donation.txHash}`}
+                              href={`https://sepolia.explorer.zksync.io/tx/${donation.txHash}`}
                               target="_blank"
                               rel="noopener noreferrer"
                               className="text-primary hover:underline flex items-center"
