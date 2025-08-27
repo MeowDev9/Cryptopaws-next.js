@@ -4,7 +4,19 @@ import { useState } from "react"
 import { ethers } from "ethers"
 import { Wallet } from "lucide-react"
 
-const ConnectWalletButton = ({ onConnect, className = "" }) => {
+interface ConnectWalletButtonProps {
+  onConnect: (address: string) => void;
+  className?: string;
+  checkRegistration?: boolean; // New prop to enable registration check
+  userRole?: 'welfare' | 'donor' | 'admin'; // User role for registration check
+}
+
+const ConnectWalletButton = ({ 
+  onConnect, 
+  className = "",
+  checkRegistration = false,
+  userRole = 'donor' // Default to donor if not specified
+}: ConnectWalletButtonProps) => {
   const [isConnecting, setIsConnecting] = useState(false)
   const [error, setError] = useState("")
 
@@ -35,11 +47,28 @@ const ConnectWalletButton = ({ onConnect, className = "" }) => {
         throw new Error("Invalid wallet address")
       }
 
-      // Call the onConnect callback with the address
-      onConnect(address)
-      
-      // Clear any previous errors
-      setError("")
+      // If checkRegistration is enabled, verify the wallet isn't already registered
+      if (checkRegistration) {
+        try {
+          const response = await fetch(`http://localhost:5001/api/auth/check-wallet?address=${address}&role=${userRole}`);
+          const data = await response.json();
+          
+          if (data.isRegistered) {
+            throw new Error('This wallet is already registered to another account');
+          }
+          
+          // Wallet is not registered, proceed with connection
+          onConnect(address);
+          setError("");
+        } catch (error) {
+          const errorMessage = error instanceof Error ? error.message : 'Failed to verify wallet registration';
+          throw new Error(errorMessage);
+        }
+      } else {
+        // No registration check needed, proceed with connection
+        onConnect(address);
+        setError("");
+      }
     } catch (error) {
       console.error("Failed to connect wallet:", error)
       const errorMessage = error instanceof Error ? error.message : "Failed to connect wallet. Please try again."

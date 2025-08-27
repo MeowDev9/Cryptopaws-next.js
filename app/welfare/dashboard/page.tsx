@@ -583,16 +583,15 @@ export default function WelfareDashboard() {
 
   // Add doctor state variables
   const [doctors, setDoctors] = useState<Doctor[]>([])
-  const [showAddDoctor, setShowAddDoctor] = useState(false)
-  const [showEditDoctor, setShowEditDoctor] = useState(false)
-  const [selectedDoctor, setSelectedDoctor] = useState<Doctor | null>(null)
+  const [showAddDoctor, setShowAddDoctor] = useState(false);
+  const [showEditDoctor, setShowEditDoctor] = useState(false);
+  const [selectedDoctor, setSelectedDoctor] = useState<Doctor | null>(null);
   const [newDoctor, setNewDoctor] = useState<NewDoctor>({
     name: "",
     email: "",
     specialization: ""
-  })
-
-  const [adoptions, setAdoptions] = useState<Adoption[]>([])
+  });
+  const [emailError, setEmailError] = useState("");
   const [showAddAdoption, setShowAddAdoption] = useState(false)
   const [newAdoption, setNewAdoption] = useState({
     name: "",
@@ -639,28 +638,49 @@ export default function WelfareDashboard() {
     return 'An unknown error occurred';
   };
 
+  // Handle user logout
+  const handleLogout = () => {
+    // Clear all auth and wallet related state
+    setWalletAddress('');
+    setWalletConnected(false);
+    setWelfareToken(null);
+    
+    // Clear local storage
+    localStorage.removeItem('welfareToken');
+    
+    // Redirect to login page with a full page reload to clear all state
+    window.location.href = '/login';
+  };
+
   // Initialize welfare token and check authentication
   useEffect(() => {
     if (typeof window !== 'undefined') {
       const token = localStorage.getItem('welfareToken');
-      setWelfareToken(token);
-      
       if (!token) {
+        // Clear any existing wallet state when not authenticated
+        setWalletAddress('');
+        setWalletConnected(false);
         router.push('/welfare/login');
         return;
       }
-
-      // Check wallet connection
-      if (window.ethereum) {
-        window.ethereum.request({ method: 'eth_accounts' })
-          .then((accounts: string[]) => {
-            if (accounts && accounts[0]) {
+      setWelfareToken(token);
+      
+      // Check if wallet is already connected
+      const checkWalletConnection = async () => {
+        if (window.ethereum) {
+          try {
+            const accounts = await window.ethereum.request({ method: 'eth_accounts' });
+            if (accounts.length > 0) {
               setWalletAddress(accounts[0]);
               setWalletConnected(true);
             }
-          })
-          .catch(console.error);
-      }
+          } catch (error) {
+            console.error('Error checking wallet connection:', error);
+          }
+        }
+      };
+      
+      checkWalletConnection();
     }
   }, [router]);
 
@@ -744,10 +764,13 @@ export default function WelfareDashboard() {
     // Check if user is logged in
     const token = localStorage.getItem('welfareToken');
       if (!token) {
+      // Clear any existing wallet state when not authenticated
+      setWalletAddress('');
+      setWalletConnected(false);
       router.push('/welfare/login');
       return;
     }
-
+    
     // Fetch welfare profile
     const fetchProfile = async () => {
       try {
@@ -775,13 +798,16 @@ export default function WelfareDashboard() {
       window.ethereum.request({ method: 'eth_accounts' })
         .then((accounts: string[]) => {
           if (accounts && accounts[0]) {
-            setWalletAddress(accounts[0]);
-            setWalletConnected(true);
+            // Only update wallet address if it matches the one in the profile
+            if (profile.blockchainAddress?.toLowerCase() === accounts[0].toLowerCase()) {
+              setWalletAddress(profile.blockchainAddress);
+              setWalletConnected(true);
+            }
           }
         })
         .catch(console.error);
     }
-  }, [router]);
+  }, [router, profile]);
 
   const handleWalletConnect = async (address: string) => {
     try {
@@ -790,39 +816,81 @@ export default function WelfareDashboard() {
         return;
       }
 
+      // First check if this wallet is already registered to another welfare
+      const checkResponse = await fetch(`/api/auth/check-wallet?address=${address}&role=welfare`);
+      const checkData = await checkResponse.json();
+      
+      if (checkData.isRegistered && checkData.userId !== profile?._id) {
+        throw new Error('This wallet is already registered to another welfare organization');
+      }
+
       // Update blockchain address in backend
       const response = await fetch('http://localhost:5001/api/welfare/profile/update', {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${welfareToken}`
+          'Authorization': `Bearer ${welfareToken}`,
+          'Cache-Control': 'no-cache, no-store, must-revalidate',
+          'Pragma': 'no-cache',
+          'Expires': '0'
         },
         body: JSON.stringify({ blockchainAddress: address })
       });
 
       if (!response.ok) {
-        throw new Error('Failed to update blockchain address');
+        const errorData = await response.json();
+        throw new Error(errorData.message || 'Failed to update blockchain address');
       }
 
-      const data = await response.json();
-
-      // Register the organization in the smart contract
-      console.log("Address passed to registerOrganization:", address);
-      console.log("Data from backend:", data);
-
-
-      await registerOrganization(
-        data.welfare.name,
-        data.welfare.description || '',
-        address
-      );
-
-      setWalletAddress(address);
-      toast({
-        title: "Success",
-        description: "Wallet connected successfully",
-        variant: "default",
+      // Fetch the updated profile to ensure we have the latest data
+      const profileResponse = await fetch('http://localhost:5001/api/welfare/profile', {
+        headers: {
+          'Authorization': `Bearer ${welfareToken}`,
+          'Cache-Control': 'no-cache, no-store, must-revalidate',
+          'Pragma': 'no-cache',
+          'Expires': '0'
+        }
       });
+
+      if (!profileResponse.ok) {
+        throw new Error('Failed to fetch updated profile');
+      }
+
+      const profileData = await profileResponse.json();
+      
+      // Only update the wallet address if it matches what we just set
+      if (profileData.blockchainAddress?.toLowerCase() === address.toLowerCase()) {
+        try {
+          // Register the organization in the smart contract
+          await registerOrganization(
+            profileData.name,
+            profileData.description || '',
+            address
+          );
+
+          // Update both the profile and wallet state
+          setProfile(profileData);
+          setWalletAddress(profileData.blockchainAddress);
+          setWalletConnected(true);
+          
+          toast({
+            title: "Success",
+            description: "Wallet connected successfully",
+            variant: "default",
+          });
+        } catch (contractError) {
+          console.error('Error registering organization on blockchain:', contractError);
+          // Even if blockchain registration fails, we still update the address in the database
+          // but show a warning to the user
+          toast({
+            title: "Warning",
+            description: "Wallet address saved, but there was an issue with blockchain registration. Please try reconnecting later.",
+            variant: "destructive",
+          });
+        }
+      } else {
+        throw new Error('Failed to verify wallet address update');
+      }
     } catch (error) {
       console.error('Error updating blockchain address:', error);
       toast({
@@ -1726,6 +1794,9 @@ export default function WelfareDashboard() {
   const handleAddDoctor = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     
+    // Reset any previous error
+    setEmailError("");
+    
     const token = localStorage.getItem("welfareToken");
     if (!token) {
       console.error("No token found");
@@ -1809,9 +1880,11 @@ export default function WelfareDashboard() {
         // Handle specific error cases
         if (response.status === 400) {
           if (errorData.message && errorData.message.includes("already registered")) {
-            errorMessage = "This email is already registered. Please use a different email address.";
+            errorMessage = "This email is already registered with another doctor in our system. Please use a different email address.";
+            setEmailError("This email is already in use. Please use a different email address.");
           } else if (errorData.message && errorData.message.includes("invalid email")) {
             errorMessage = "Please enter a valid email address.";
+            setEmailError("Please enter a valid email address.");
           } else if (errorData.message) {
             errorMessage = errorData.message;
           }
@@ -1821,12 +1894,14 @@ export default function WelfareDashboard() {
           errorMessage = "An unexpected server error occurred. Please try again later.";
         }
         
-        // Show the error toast
-        toast({
-          title: "Error",
-          description: errorMessage,
-          variant: "destructive",
-        });
+        // Only show toast if it's not a duplicate email error (we'll show that inline)
+        if (!errorMessage.includes("already registered")) {
+          toast({
+            title: "Error",
+            description: errorMessage,
+            variant: "destructive",
+          });
+        }
         
         // Re-throw the error for further handling if needed
         throw new Error(errorMessage);
@@ -2129,6 +2204,9 @@ export default function WelfareDashboard() {
       try {
         const token = localStorage.getItem('welfareToken');
         if (!token) {
+          // Clear any existing wallet state when not authenticated
+          setWalletAddress('');
+          setWalletConnected(false);
           router.push('/welfare/login');
           return;
         }
@@ -2791,10 +2869,7 @@ export default function WelfareDashboard() {
             {/* Reports, Analytics, and Settings tabs removed */}
 
             <button
-              onClick={() => {
-                localStorage.removeItem("welfareToken")
-                router.push("/login")
-              }}
+              onClick={handleLogout}
               className="flex items-center w-full p-2 rounded-md text-red-400 hover:bg-gray-700"
             >
               <LogOut className="h-5 w-5" />
@@ -2842,12 +2917,18 @@ export default function WelfareDashboard() {
             {activeTab === "adoption-requests" && "Adoption Requests"}
           </h1>
           <div className="flex items-center space-x-4">
-            {!walletConnected ? (
-              <ConnectWalletButton onConnect={handleWalletConnect} />
+            {!profile?.blockchainAddress ? (
+              <ConnectWalletButton 
+                onConnect={handleWalletConnect} 
+                checkRegistration={true}
+                userRole="welfare"
+              />
             ) : (
               <div className="flex items-center bg-gray-700 rounded-lg px-3 py-1">
                 <Wallet className="h-4 w-4 mr-2 text-purple-400" />
-                <span className="text-sm font-mono truncate max-w-[150px]">{walletAddress}</span>
+                <span className="text-sm font-mono">
+                  {`${profile.blockchainAddress.substring(0, 6)}...${profile.blockchainAddress.substring(profile.blockchainAddress.length - 4)}`}
+                </span>
               </div>
             )}
             <span className="text-sm text-gray-300">Welcome, {profile.name || "User"}</span>
