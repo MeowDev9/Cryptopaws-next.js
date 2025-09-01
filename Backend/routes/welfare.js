@@ -4,6 +4,7 @@ const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const auth = require('../middleware/auth');
 const WelfareOrganization = require('../models/WelfareOrganization');
+const { isEmailInUse } = require('../utils/emailUtils');
 
 // Update blockchain status
 router.put('/blockchain-status', auth, async (req, res) => {
@@ -59,29 +60,19 @@ router.put('/blockchain-address', auth, async (req, res) => {
   }
 });
 
-// Register new welfare organization
+// Register a new welfare organization
 router.post('/register', async (req, res) => {
   try {
-    const {
-      name,
-      email,
-      password,
-      phone,
-      address,
-      description,
-      website,
-      blockchainAddress,
-      blockchainTxHash
-    } = req.body;
+    const { name, email, password, phone, address, description, website, blockchainAddress, blockchainTxHash } = req.body;
 
-    // Check if welfare organization already exists
-    let welfare = await WelfareOrganization.findOne({ email });
-    if (welfare) {
-      return res.status(400).json({ message: 'Welfare organization already exists' });
+    // Validate email format, check if it's already in use, and ensure it's not an admin email
+    const { isValid, isUsed, message } = await validateEmail(email, { isAdminCheck: true });
+    if (!isValid || isUsed) {
+      return res.status(400).json({ message });
     }
 
     // Create new welfare organization
-    welfare = new WelfareOrganization({
+    const welfare = new WelfareOrganization({
       name,
       email,
       password,

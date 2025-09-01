@@ -6,16 +6,17 @@ const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const Case = require('../models/Case');
 const { sendTempPasswordEmail } = require('../utils/emailService');
+const { validateEmail } = require('../utils/emailUtils');
 
 // Register a new doctor (legacy endpoint)
 router.post('/register', auth, async (req, res) => {
   try {
     const { name, email, password, specialization, welfareId } = req.body;
 
-    // Check if doctor already exists
-    let doctor = await Doctor.findOne({ email });
-    if (doctor) {
-      return res.status(400).json({ message: 'Doctor already exists' });
+    // Validate email format, check if it's already in use, and ensure it's not an admin email
+    const { isValid, isUsed, message } = await validateEmail(email, { isAdminCheck: true });
+    if (!isValid || isUsed) {
+      return res.status(400).json({ message });
     }
 
     // Hash password
@@ -45,10 +46,10 @@ router.post('/register-with-temp-password', auth, async (req, res) => {
   try {
     const { name, email, specialization, welfareId } = req.body;
 
-    // Check if doctor already exists
-    let doctor = await Doctor.findOne({ email });
-    if (doctor) {
-      return res.status(400).json({ message: 'Doctor already exists' });
+    // Validate email format, check if it's already in use, and ensure it's not an admin email
+    const { isValid, isUsed, message } = await validateEmail(email, { isAdminCheck: true });
+    if (!isValid || isUsed) {
+      return res.status(400).json({ message });
     }
 
     // Generate a random temporary password
@@ -181,7 +182,14 @@ router.put('/profile', auth, async (req, res) => {
     
     // Update basic profile information
     if (name) doctor.name = name;
-    if (email) doctor.email = email;
+    if (email) {
+      // Validate email format and check if it's already in use
+      const { isValid, isUsed, message } = await validateEmail(email);
+      if (!isValid || isUsed) {
+        return res.status(400).json({ message });
+      }
+      doctor.email = email;
+    }
     if (specialization) doctor.specialization = specialization;
     
     // If changing password
@@ -251,7 +259,14 @@ router.put('/:id', auth, async (req, res) => {
 
     // Update fields
     if (name) doctor.name = name;
-    if (email) doctor.email = email;
+    if (email) {
+      // Validate email format and check if it's already in use
+      const { isValid, isUsed, message } = await validateEmail(email);
+      if (!isValid || isUsed) {
+        return res.status(400).json({ message });
+      }
+      doctor.email = email;
+    }
     if (specialization) doctor.specialization = specialization;
 
     await doctor.save();
@@ -396,7 +411,14 @@ router.put('/profile', auth, async (req, res) => {
       return res.status(404).json({ message: 'Doctor not found' });
     }
     if (name) doctor.name = name;
-    if (email) doctor.email = email;
+    if (email) {
+      // Validate email format and check if it's already in use
+      const { isValid, isUsed, message } = await validateEmail(email);
+      if (!isValid || isUsed) {
+        return res.status(400).json({ message });
+      }
+      doctor.email = email;
+    }
     if (specialization) doctor.specialization = specialization;
     if (password) {
       const salt = await bcrypt.genSalt(10);

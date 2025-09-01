@@ -82,71 +82,159 @@ export default function LoginPage() {
       const result = await res.json()
 
       if (res.ok && result.token) {
-        setSuccessMessage(isSignUp ? "Signup successful!" : "Signin successful!")
+        setSuccessMessage(isSignUp ? "Registration successful! You can now sign in." : "Sign in successful!")
         if (!isSignUp) {
-          // store token + route
-          const tokenKey =
-            role === "Admin"
-              ? "adminToken"
-              : role === "Welfare"
-              ? "welfareToken"
-              : role === "Doctor"
-              ? "doctorToken"
-              : "donorToken"
-          localStorage.setItem(tokenKey, result.token)
-          router.push(
-            role === "Admin"
-              ? "/admin/dashboard"
-              : role === "Welfare"
-              ? "/welfare/dashboard"
-              : role === "Doctor"
-              ? "/doctor/dashboard"
-              : "/donor/dashboard"
-          )
+          // Store token based on role
+          if (role === "Admin") {
+            localStorage.setItem("adminToken", result.token)
+            router.push("/admin/dashboard")
+          } else if (role === "Welfare") {
+            localStorage.setItem("welfareToken", result.token)
+            router.push("/welfare/dashboard")
+          } else if (role === "Doctor") {
+            localStorage.setItem("doctorToken", result.token)
+            router.push("/doctor/dashboard")
+          } else {
+            localStorage.setItem("donorToken", result.token)
+            router.push("/donor/dashboard")
+          }
+        } else if (isSignUp) {
+          // For signup, clear the form and switch to sign in
+          setName("")
+          setEmail("")
+          setPassword("")
+          setIsSignUp(false)
         }
       } else {
-        setErrorMessage(result.message || "Login failed")
+        // Handle specific error messages from the backend
+        if (result.message && result.message.includes("already registered")) {
+          setErrorMessage("This email is already registered. Please sign in instead.")
+        } else if (result.message && result.message.includes("invalid credentials")) {
+          setErrorMessage("Invalid email or password. Please try again.")
+        } else if (result.message) {
+          // Generic error message for other cases
+          setErrorMessage(result.message)
+        } else {
+          setErrorMessage("An error occurred. Please try again.")
+        }
       }
-    } catch (err: any) {
-      setErrorMessage("Server error: " + err.message)
+    } catch (error: any) {
+      console.error("Login error:", error);
+
+      // Handle network errors
+      if (error.name === 'TypeError' && error.message.includes('fetch')) {
+        setErrorMessage("Unable to connect to the server. Please check your internet connection and try again.");
+      }
+      // Handle specific error cases
+      else if (error.message) {
+        const errorMessage = error.message.toLowerCase();
+
+        if (errorMessage.includes('network request failed')) {
+          setErrorMessage("Network error. Please check your internet connection and try again.");
+        } else if (errorMessage.includes('invalid credentials') || errorMessage.includes('user not found')) {
+          setErrorMessage("Invalid email or password. Please try again.");
+        } else if (errorMessage.includes('account not verified')) {
+          setErrorMessage("Please verify your email before signing in. Check your inbox for the verification link.");
+        } else if (errorMessage.includes('too many attempts')) {
+          setErrorMessage("Too many login attempts. Please try again later.");
+        } else {
+          // Default error message
+          setErrorMessage("An unexpected error occurred. Please try again.");
+        }
+      } else {
+        // Fallback error message
+        setErrorMessage("An unexpected error occurred. Please try again later.");
+      }
     } finally {
-      setIsLoading(false)
+      setIsLoading(false);
     }
   }
 
   const handleGoogleLogin = async (idToken: string) => {
-    setIsLoading(true)
-    setErrorMessage("")
-    setSuccessMessage("")
+    setIsLoading(true);
+    setErrorMessage("");
+    setSuccessMessage("");
+
     try {
       const res = await fetch("http://localhost:5001/api/auth/google", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ idToken }),
-      })
+      });
+
       if (!res.ok) {
-        const err = await res.json()
-        throw new Error(err.message || "Google authentication failed")
+        const errorData = await res.json();
+        let errorMessage = "Google authentication failed";
+
+        // Handle specific error cases
+        if (res.status === 400) {
+          if (errorData.message && errorData.message.includes("already registered")) {
+            errorMessage = "This Google account is already registered with a different login method. Please use email/password or try a different Google account.";
+          } else if (errorData.message) {
+            errorMessage = errorData.message;
+          }
+        } else if (res.status === 429) {
+          errorMessage = "Too many login attempts. Please try again later.";
+        } else if (res.status >= 500) {
+          errorMessage = "Our servers are experiencing issues. Please try again later.";
+        }
+
+        throw new Error(errorMessage);
       }
-      const result = await res.json()
-      localStorage.setItem("donorToken", result.token)
-      router.push("/donor/dashboard")
-    } catch (err: any) {
-      setErrorMessage(err.message)
+
+      const result = await res.json();
+
+      if (!result.token) {
+        throw new Error("No authentication token received from server");
+      }
+
+      // Store the JWT token returned from our backend (not the Google token)
+      localStorage.setItem("donorToken", result.token);
+
+      // Show success message before redirecting
+      setSuccessMessage("Successfully signed in with Google!");
+
+      // Small delay to show success message before redirect
+      setTimeout(() => {
+        // Redirect to Donor dashboard
+        router.push("/donor/dashboard");
+      }, 1000);
+
+    } catch (error: any) {
+      console.error("Google login error:", error);
+
+      let userFriendlyError = "Failed to sign in with Google. Please try again.";
+
+      // Provide more specific error messages for common cases
+      if (error.message) {
+        const errorMessage = error.message.toLowerCase();
+
+        if (errorMessage.includes('network request failed')) {
+          userFriendlyError = "Network error. Please check your internet connection and try again.";
+        } else if (errorMessage.includes('already registered')) {
+          userFriendlyError = error.message; // Use the specific error message from the server
+        } else if (errorMessage.includes('popup closed')) {
+          userFriendlyError = "Google sign-in was cancelled. Please try again if you want to continue.";
+        } else if (errorMessage.includes('idpiframe_initialization_failed')) {
+          userFriendlyError = "Could not connect to Google. Please check your internet connection and try again.";
+        }
+      }
+
+      setErrorMessage(userFriendlyError);
     } finally {
-      setIsLoading(false)
+      setIsLoading(false);
     }
   }
 
   /* ---------- Helpers ---------- */
-const roleIcons: Record<Role, React.ReactElement> = {
-  Admin:   <ShieldCheck className="h-5 w-5 text-purple-400" />,
-  Welfare: <Building2   className="h-5 w-5 text-purple-400" />,
-  Doctor:  <Stethoscope className="h-5 w-5 text-purple-400" />,
-  Donor:   <UserCheck   className="h-5 w-5 text-purple-400" />,
-}
+  const roleIcons: Record<Role, React.ReactElement> = {
+    Admin: <ShieldCheck className="h-5 w-5 text-purple-400" />,
+    Welfare: <Building2 className="h-5 w-5 text-purple-400" />,
+    Doctor: <Stethoscope className="h-5 w-5 text-purple-400" />,
+    Donor: <UserCheck className="h-5 w-5 text-purple-400" />,
+  }
 
-const getRoleIcon = () => roleIcons[role]
+  const getRoleIcon = () => roleIcons[role]
 
   /* ---------- Variants ---------- */
 

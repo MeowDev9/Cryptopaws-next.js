@@ -114,7 +114,7 @@ export default function ConnectWalletButton({ onAddressChange }: ConnectWalletBu
   }, []);
 
   const zkSyncSepoliaParams = {
-    chainId: "0x144", // 324 in hex
+    chainId: "0x12c", // 300 in hex
     chainName: "zkSync Era Sepolia",
     nativeCurrency: {
       name: "Ethereum",
@@ -130,7 +130,7 @@ export default function ConnectWalletButton({ onAddressChange }: ConnectWalletBu
       try {
         await window.ethereum.request({
           method: "wallet_switchEthereumChain",
-          params: [{ chainId: "0x144" }],
+          params: [{ chainId: "0x12c" }],
         });
         return true;
       } catch (switchError: any) {
